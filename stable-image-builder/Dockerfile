@@ -1,18 +1,14 @@
 # Use DEBIAN BOOKWORM-SLIM
 FROM debian:bookworm-slim
-
 ARG DEBIAN_FRONTEND=noninteractive 
 ARG TZ=Asia/Dhaka
-ENV PGID=0 \
-    PUID=0
-RUN date +%c > /build-timestamp 
 RUN mkdir /AgentDVR
-COPY --chmod=555 dependency.sh /AgentDVR/dependency.sh
-COPY --chmod=555 setup.sh /AgentDVR/setup.sh
-COPY --chmod=555 ffmpeg.sh /AgentDVR/ffmpeg.sh
-COPY --chmod=555 banner.sh /AgentDVR/banner.sh
-COPY --chmod=555 Agent.sh /AgentDVR/Agent.sh
-
+COPY --chmod=555 dependency.sh /AgentDVR
+COPY --chmod=555 setup.sh /AgentDVR
+COPY --chmod=555 ffmpeg.sh /AgentDVR
+COPY --chmod=555 banner.sh /AgentDVR
+COPY --chmod=555 Agent.sh /AgentDVR
+COPY --chmod=444 build-timestamp /AgentDVR
 # Add to source.list
 #RUN bash /AgentDVR/source.sh
 
@@ -25,11 +21,10 @@ RUN bash /AgentDVR/dependency.sh
 # Download/Install iSpy Agent DVR: 
 RUN bash /AgentDVR/setup.sh
 
-
 # Install ffmpeg
 RUN bash /AgentDVR/ffmpeg.sh
 
-RUN	apt-get -y --purge --allow-remove-essential remove unzip wget && \ 
+RUN apt-get -y --purge --allow-remove-essential remove unzip wget && \ 
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
@@ -37,8 +32,7 @@ RUN	apt-get -y --purge --allow-remove-essential remove unzip wget && \
     rm -rf /AgentDVR/setup.sh && \
     rm -rf /AgentDVR/source.sh && \
     rm -rf /AgentDVR/update.sh && \
-	rm -rf /AgentDVR/ffmpeg.sh
-
+    rm -rf /AgentDVR/ffmpeg.sh
 
 # Docker needs to run a TURN server to get webrtc traffic to and from it over forwarded ports from the host
 # These are the default ports. If the ports below are modified here you'll also need to set the ports in XML/Config.xml
@@ -53,9 +47,6 @@ ENV MALLOC_TRIM_THRESHOLD_=100000
 
 # Main UI port
 EXPOSE 8090
-
-# HTTP port
-EXPOSE 80
 
 # HTTPS port
 EXPOSE 443
