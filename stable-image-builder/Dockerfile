@@ -3,17 +3,15 @@ FROM debian:bookworm-slim
 
 ARG DEBIAN_FRONTEND=noninteractive 
 ARG TZ=Asia/Dhaka
-ARG NAME
-    
+ENV PGID=0 \
+    PUID=0
+RUN date +%c > /build-timestamp 
 RUN mkdir /AgentDVR
-
-#COPY --chmod=555 source.sh /AgentDVR/source.sh
-#COPY --chmod=555 update.sh /AgentDVR/update.sh
 COPY --chmod=555 dependency.sh /AgentDVR/dependency.sh
 COPY --chmod=555 setup.sh /AgentDVR/setup.sh
 COPY --chmod=555 ffmpeg.sh /AgentDVR/ffmpeg.sh
 COPY --chmod=555 banner.sh /AgentDVR/banner.sh
-COPY --chmod=555 entrypoint.sh /AgentDVR/entrypoint.sh
+COPY --chmod=555 Agent.sh /AgentDVR/Agent.sh
 
 # Add to source.list
 #RUN bash /AgentDVR/source.sh
@@ -72,4 +70,4 @@ EXPOSE 50000-50010/udp
 VOLUME ["/AgentDVR/Media/XML", "/AgentDVR/Media/WebServerRoot/Media", "/AgentDVR/Commands"]
 
 # Define service entrypoint
-CMD ["/AgentDVR/entrypoint.sh"]
+CMD ["/AgentDVR/Agent.sh"]
