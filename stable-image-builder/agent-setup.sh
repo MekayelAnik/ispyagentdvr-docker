@@ -2,7 +2,7 @@
 
 # Install script for AgentDVR/ Linux
 # To execute: save and `chmod +x ./linux_setup2.sh` then `./linux_setup2.sh`
-version=4_1_5_0
+version=4_1_6_0
 
 . /etc/*-release
 arch=`uname -m`
