@@ -41,6 +41,7 @@ RUN	apt-get -y --purge --allow-remove-essential remove unzip wget && \
     rm -rf /AgentDVR/update.sh && \
 	rm -rf /AgentDVR/ffmpeg.sh
 
+
 # Docker needs to run a TURN server to get webrtc traffic to and from it over forwarded ports from the host
 # These are the default ports. If the ports below are modified here you'll also need to set the ports in XML/Config.xml
 # for example <TurnServerPort>3478</TurnServerPort><TurnServerMinPort>50000</TurnServerMinPort><TurnServerMaxPort>50010</TurnServerMaxPort>
