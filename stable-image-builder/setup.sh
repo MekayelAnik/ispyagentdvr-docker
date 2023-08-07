@@ -1,13 +1,12 @@
 #!/bin/bash
 # Install script PART-1 for AgentDVR/ Linux
 # To execute: save and `chmod +x ./linux_setup2.sh` then `./linux_setup2.sh
-version=4_8_1_0
+version=4_8_2_0
 . /etc/*-release
 arch=`uname -m`
 cd /AgentDVR
 #download latest version
 	echo "finding installer for $(arch)"
-#	purl="https://ispyrtcdata.blob.core.windows.net/downloads/Agent_Linux64_4_8_0_0.zip"
 	purl="https://ispyfiles.azureedge.net/downloads/Agent_Linux64_"$version".zip"
 	case $(arch) in
 		'aarch64' | 'arm64')
