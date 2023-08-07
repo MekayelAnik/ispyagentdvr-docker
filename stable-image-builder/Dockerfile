@@ -4,7 +4,8 @@ LABEL AUTHOR=https://github.com/MekayelAnik
 RUN mkdir /entrypoint && \
     apt-get update && \
     apt-get upgrade -y && \
-    apt-get install systemd python3 curl unzip ffmpeg -y && \
+    apt-get install systemd python3-minimal curl unzip -y && \
+	apt-get install ffmpeg --no-install-recommends -y && \
     dpkg -L systemd | grep ".service$" | tr '\n' '\0' | xargs -0 -n1 -i rm -v {} && \
 	rm /etc/fstab
 	
