@@ -1,34 +1,27 @@
 FROM debian:bookworm-slim
 LABEL AUTHOR=https://github.com/MekayelAnik
-
-RUN mkdir /entrypoint && \
-    apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install systemd python3-minimal curl unzip -y && \
-	apt-get install ffmpeg --no-install-recommends -y && \
-    dpkg -L systemd | grep ".service$" | tr '\n' '\0' | xargs -0 -n1 -i rm -v {} && \
-	rm /etc/fstab
-	
-ADD --chmod=555 https://raw.githubusercontent.com/gdraheim/docker-systemctl-replacement/v1.5.7106/files/docker/systemctl3.py /bin/systemctl
-COPY --chmod=555 agent-setup.sh /entrypoint/agent-setup.sh
-COPY --chmod=555 entrypoint.sh /entrypoint/entrypoint.sh
-RUN bash /entrypoint/agent-setup.sh
-
-RUN chmod 555 /usr/bin/systemctl && \
-    systemctl daemon-reload && \
-    echo "Service Daemon RELOADED!" && \
-    systemctl enable AgentDVR && \
-    echo "AgentDVR.service ENABLED!" && \
-    systemctl start AgentDVR && \
-    echo "AgentDVR.service STARTED!" 
+RUN apt-get update && \
+    apt-get upgrade -y
+RUN apt-get install systemd python3-minimal curl unzip -y && \
+    dpkg -L systemd | grep ".service$" | tr '\n' '\0' | xargs -0 -n1 -i rm -v {}
+ADD --chmod=555 https://raw.githubusercontent.com/gdraheim/docker-systemctl-replacement/master/files/docker/systemctl3.py /bin/systemctl
+RUN mkdir /setup
+COPY --chmod=555 setup-part1.sh /setup/setup-part1.sh
+COPY --chmod=555 setup-part2.sh /setup/setup-part2.sh
+RUN bash /setup/setup-part1.sh
+RUN	apt-get install ffmpeg --no-install-recommends -y 
+RUN bash /setup/setup-part2.sh
 
 # Clean up
 RUN apt-get -y --purge remove curl unzip  && \ 
     apt-get autoremove -y && \
     apt-get clean && \
+	rm /etc/fstab && \
     chmod 555 /bin/systemctl && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*  && \
-    rm -rf /entrypoint/agent-setup.sh
+    rm -rf /setup
+RUN mkdir /entrypoint
+COPY --chmod=555 entrypoint.sh /entrypoint/entrypoint.sh
 
 # Docker needs to run a TURN server to get webrtc traffic to and from it over forwarded ports from the host
 # These are the default ports. If the ports below are modified here you'll also need to set the ports in XML/Config.xml
