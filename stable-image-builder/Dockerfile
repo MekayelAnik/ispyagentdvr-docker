@@ -7,25 +7,26 @@ ARG NAME
     
 RUN mkdir /AgentDVR
 
-# COPY --chmod=555 source.sh /AgentDVR/source.sh
-# COPY --chmod=555 update.sh /AgentDVR/update.sh
+#COPY --chmod=555 source.sh /AgentDVR/source.sh
+#COPY --chmod=555 update.sh /AgentDVR/update.sh
 COPY --chmod=555 dependency.sh /AgentDVR/dependency.sh
 COPY --chmod=555 setup.sh /AgentDVR/setup.sh
 COPY --chmod=555 ffmpeg.sh /AgentDVR/ffmpeg.sh
 COPY --chmod=555 banner.sh /AgentDVR/banner.sh
 COPY --chmod=555 entrypoint.sh /AgentDVR/entrypoint.sh
 
+# Add to source.list
+#RUN bash /AgentDVR/source.sh
+
 # Download and install distro Updates
 #RUN bash /AgentDVR/update.sh
-
-# Add to source.list
-# RUN bash /AgentDVR/source.sh
 
 # Download and install dependencies
 RUN bash /AgentDVR/dependency.sh
 	
 # Download/Install iSpy Agent DVR: 
 RUN bash /AgentDVR/setup.sh
+
 
 # Install ffmpeg
 RUN bash /AgentDVR/ffmpeg.sh
@@ -36,9 +37,9 @@ RUN	apt-get -y --purge --allow-remove-essential remove unzip wget && \
     rm -rf /var/lib/apt/lists/* && \
     rm -rf /AgentDVR/dependency.sh && \
     rm -rf /AgentDVR/setup.sh && \
-#    rm -rf /AgentDVR/source.sh && \
-#    rm -rf /AgentDVR/update.sh && \
-    rm -rf /AgentDVR/ffmpeg.sh
+    rm -rf /AgentDVR/source.sh && \
+    rm -rf /AgentDVR/update.sh && \
+	rm -rf /AgentDVR/ffmpeg.sh
 
 
 # Docker needs to run a TURN server to get webrtc traffic to and from it over forwarded ports from the host
@@ -50,7 +51,7 @@ RUN	apt-get -y --purge --allow-remove-essential remove unzip wget && \
 # Define default environment variables
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Fix a memory leak on encoded recording
-ENV MALLOC_TRIM_THRESHOLD_=300000
+ENV MALLOC_TRIM_THRESHOLD_=100000
 
 # Main UI port
 EXPOSE 8090
