@@ -33,10 +33,10 @@ case $(arch) in
 		'arm' | 'armv6l' | 'armv7l')
 
 			# The follwing is MUST!
-			apt-get install -y coturn
 			apt-get install -y libatlas-base-dev libatlas3-base  --no-install-recommends
 			# The Following is OPTIONAL but recommanded
-			apt-get -t experimental install -y glibc-source
+			apt-get -t experimental install -y glibc-source --no-install-recommends
+#                       apt-get install -y coturn
 		;;
-	esac	
+	esac
 exit 0
