@@ -57,9 +57,9 @@ Multi Aarch image of iSpy's Agent DVR, standalone free-to-use NVR software for I
       <td>Stable "iSpy Agent DVR" releases</td>
     </tr>
     <tr>
-      <td align="center">4.9.1.0</td>
+      <td align="center">4.9.3.0</td>
       <td align="center">✅</td>
-      <td>Static "iSpy Agent DVR" build version 4.9.1.0</td>
+      <td>Static "iSpy Agent DVR" build version 4.9.3.0</td>
     </tr>
   </tbody>
 </table>
