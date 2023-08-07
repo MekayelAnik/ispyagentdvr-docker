@@ -1,7 +1,7 @@
 #!/bin/bash
 # Install script PART-1 for AgentDVR/ Linux
 # To execute: save and `chmod +x ./linux_setup2.sh` then `./linux_setup2.sh
-version=4_8_0_0
+version=4_8_1_0
 . /etc/*-release
 arch=`uname -m`
 cd /AgentDVR
@@ -14,7 +14,7 @@ cd /AgentDVR
 			purl="https://ispyfiles.azureedge.net/downloads/Agent_LinuxARM64_"$version".zip"
 		;;
 		'arm' | 'armv6l' | 'armv7l')
-			purl="https://ispyrtcdata.blob.core.windows.net/downloads/Agent_LinuxARMHF_4_8_0_0.zip"
+			purl="https://ispyrtcdata.blob.core.windows.net/downloads/Agent_LinuxARM_"$version".zip"
 		;;
 	esac
 
