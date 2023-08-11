@@ -1,7 +1,7 @@
 #!/bin/bash
 # Install script PART-1 for AgentDVR/ Linux
 # To execute: save and `chmod +x ./linux_setup2.sh` then `./linux_setup2.sh
-version=4_9_4_0
+version=4_9_5_0
 . /etc/*-release
 arch=`uname -m`
 cd /AgentDVR
