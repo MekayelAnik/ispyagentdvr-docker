@@ -57,9 +57,9 @@ Multi Aarch image of iSpy's Agent DVR, standalone free-to-use NVR software for I
       <td>Stable "iSpy Agent DVR" releases</td>
     </tr>
     <tr>
-      <td align="center">4.9.3.0</td>
+      <td align="center">4.9.6.0</td>
       <td align="center">✅</td>
-      <td>Static "iSpy Agent DVR" build version 4.9.3.0</td>
+      <td>Static "iSpy Agent DVR" build version 4.9.6.0</td>
     </tr>
   </tbody>
 </table>
@@ -294,3 +294,8 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
 <li><strong>4.7.3.0:</strong> - Bumped FFmpeg version from 5 to 6.</li>
 <li><strong>4.1.2.0:</strong> - Initial Release.</li>
 </ul>
+<h2>Issues & Requests</h2>
+<p> To submit this Docker image specific issues or requests visit this docker image's Github Link: <a href="https://www.github.com/MekayelAnik/ispyagentdvr-docker" rel="nofollow noopener">https://www.github.com/MekayelAnik/ispyagentdvr-docker</a>
+</p>
+<p> For iSpy AgentDVR related issues and requests, please visit: <a href="https://www.reddit.com/r/ispyconnect/" rel="nofollow noopener">https://www.reddit.com/r/ispyconnect/</a>
+</p>
