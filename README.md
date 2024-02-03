@@ -1,10 +1,8 @@
-# ispyagentdvr-docker
-Multi Aarch image of iSpy's Agent DVR, standalone free-to-use NVR software for IP Camera management
-
 <h1>iSpy Agent DVR multi-arch image</h1>
 <img alt="ispyagentdvr" src="https://ispycontent.azureedge.net/img/ispy2.png">
 <p>This is an unofficial multi-aarch docker image of Agent DVR of iSpy created for multiplatform support. iSpy Agent DVR creates a local server for IP cameras to be managed. Official Website: <a href="https://www.ispyconnect.com" rel="nofollow noopener">https://www.ispyconnect.com</a>
 </p>
+<img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/mekayelanik/ispyagentdvr.svg"><img alt="Docker Stars" src="https://img.shields.io/docker/stars/mekayelanik/ispyagentdvr.svg">
 <h2>The architectures supported by this image are:</h2>
 <table>
   <thead>
@@ -54,12 +52,22 @@ Multi Aarch image of iSpy's Agent DVR, standalone free-to-use NVR software for I
     <tr>
       <td align="center">latest</td>
       <td align="center">✅</td>
-      <td>Stable "iSpy Agent DVR" releases</td>
+      <td>"iSpy Agent DVR" Latest releases image</td>
     </tr>
     <tr>
-      <td align="center">4.9.6.0</td>
+      <td align="center">5.2.4.0</td>
       <td align="center">✅</td>
-      <td>Static "iSpy Agent DVR" build version 4.9.6.0</td>
+      <td>"iSpy Agent DVR" Static version 5.2.4.0 image</td>
+    </tr>
+    <tr>
+      <td align="center">vlc-support-latest</td>
+      <td align="center">✅</td>
+      <td>"iSpy Agent DVR" Latest build with VLC supported image</td>
+    </tr>
+    <tr>
+      <td align="center">vlc-support-5.2.4.0</td>
+      <td align="center">✅</td>
+      <td>"iSpy Agent DVR" Static build version 5.2.4.0 with VLC supported image</td>
     </tr>
   </tbody>
 </table>
