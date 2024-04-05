@@ -28,6 +28,12 @@ if [ -n "$PGID" ]; then
 	fi
 fi
 if [[ "$UID_CHANGED" == 'true' ]] && [[ "$GID_CHANGED" == 'true' ]]; then
+	#####	Add Permission to Use GPU Encode/Decode by Users other than root	##### 
+	for ((i = 128; i <= 150; i++)); do
+		if [ -e /dev/dri/renderD"$i" ]; then
+        		chmod 0666 /dev/dri/renderD"$i"
+    	fi
+	done
     # Switch to agentdvr and execute the Agent binary
     chown -R agentdvr:agentdvr '/AgentDVR'
     su -m agentdvr -c '/AgentDVR/Agent'
