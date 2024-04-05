@@ -1,5 +1,6 @@
 #!/bin/bash
 start_agent() {
+###### Special Thanks to "Dylan Como" (https://github.com/Orange-418) for the Help in the "Run Docker Container as a Spesific user/group section".	######
 # Check if PUID and PGID have been set. If so, create or modify the user/group.
 if [ -n "$PUID" ]; then 
 	if [[ "$PUID" =~ ^[0-9]+$ ]]; then
