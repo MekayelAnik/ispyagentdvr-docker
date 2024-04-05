@@ -62,11 +62,3 @@ VOLUME ["/AgentDVR/Media/XML", "/AgentDVR/Media/WebServerRoot/Media", "/AgentDVR
 
 # Define service entrypoint
 CMD ["/AgentDVR/Agent.sh"]
-
-# Create a group and user with specified GID/UID
-# Due to how the Agent runs, it seems necessary to open perms on AgentDVR folder
-# Please change to restricted perms if alternative method is found, or future updates allow
-RUN groupadd -f -g 1000 agentdvr && \
-    useradd -m -d /home/agentdvr -s /bin/bash -g 1000 -u 1000 agentdvr || true && \
-    chown -R agentdvr:agentdvr /AgentDVR && \
-    chmod 777 -R /AgentDVR
