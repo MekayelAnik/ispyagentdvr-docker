@@ -73,6 +73,7 @@
 </table>
 <h2>Running Image :</h2>
 <p>Here are some example snippets to help you get started creating a container.</p>
+<p>Once it is running you must connect to the IP address of the host, not via `localhost:8090`.  While the UI will load if you connect to `localhost:8090`, it will be unable to establish a WebRTC connection with the server and eventually the UI will error.</p>
 <h3>docker-compose (recommended, <a href="https://itnext.io/a-beginners-guide-to-deploying-a-docker-application-to-production-using-docker-compose-de1feccd2893" rel="nofollow noopener">click here for more info</a>) </h3>
 <pre><code>---
 version: "3.9"
