@@ -40,10 +40,10 @@
 
 <p> - <b>The following possible BREAKING CHANGES will be present in every future deployments</b></p>
 <ul>
-<li><strong> - FFMPEG version bumped from 6.0.1 to 7.0.2</strong></li> 
-<li><strong> - DOTNET version bumped to 9.0</strong></li>
-<li><strong> - Environment Variable WEBUI_PORT is now changed to AGENTDVR_WEBUI_PORT. Those who use Environment Variable to change the Port for Web UI, please use AGENTDVR_WEBUI_PORT from now on.</strong></li>
-<li><strong> - TURN Server Port range changed from 50000-50010 to 50000-50100. Please set the range in Docker CLI or Docker Compose to 50000-50100</strong></li>
+<li><strong> FFMPEG version bumped from 6.0.1 to 7.0.2</strong></li> 
+<li><strong> DOTNET version bumped to 9.0</strong></li>
+<li><strong> Environment Variable WEBUI_PORT is now changed to AGENTDVR_WEBUI_PORT. Those who use Environment Variable to change the Port for Web UI, please use AGENTDVR_WEBUI_PORT from now on.</strong></li>
+<li><strong> TURN Server Port range changed from 50000-50010 to 50000-50100. Please set the range in Docker CLI or Docker Compose to 50000-50100</strong></li>
 </ul>
 <p> - <b>The Following images: <code>gpu-hwaccel-latest</code>,<code>vlc-hwaccel-latest</code> & <code>vlc-support-latest</code> will be taken down on 1st August 2024. Some images were re-uploaded. The Versions that have been re-uploaded are from 5.3.5.0 to the 5.6.0.0 AgentDVR versions. Only the Default tags were re-uploaded & do incorporate all the features combined that were avalable on the previously maintained 4 types of images in itself. Sorry for the inconvenience!</b>This is done inorder to Raid Bug detection, complexity reduction and ease of maintanance</p>
 <p> - Alhamdulillah, The <strong>ARMHF</strong> image has been fixed. Special Thanks To <strong> Sean T</strong> for fixing the underlying issues. For <strong>ARM32-bit/ARMHF</strong> devices, please download image version greater or equal to <strong>4.8.2.0</strong>.</p>
