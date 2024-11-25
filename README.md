@@ -36,14 +36,14 @@
 </table>
 <h2>Anouncements:</h2>
 <p> - <b>PLEASE NOTE: Beta version (5.8.1.0 & 5.8.2.0) of iSpyagentDVR has been released for all the BRAVE HEARTED iSpyAgentDVR lovers to test the BLEEDING EDGE!</b></p>
-<strong> ⚠️⚠️⚠️ WARNNING!!! Beta versions should not be used in mission critical sytems! ⚠️⚠️⚠️</strong>
-
-<p> - <b>The following possible BREAKING CHANGES will be present in every future deployments</b></p>
+<p><strong> ⚠️⚠️⚠️ WARNNING!!! Beta versions should not be used in mission critical systems! ⚠️⚠️⚠️</strong></p>
+<p>
+ - <b>The following possible BREAKING CHANGES will be present in every future deployments</b></p>
 <ul>
-<li><strong> FFMPEG version bumped from 6.0.1 to 7.0.2</strong></li> 
-<li><strong> DOTNET version bumped to 9.0</strong></li>
-<li><strong> Environment Variable WEBUI_PORT is now changed to AGENTDVR_WEBUI_PORT. Those who use Environment Variable to change the Port for Web UI, please use AGENTDVR_WEBUI_PORT from now on.</strong></li>
-<li><strong> TURN Server Port range changed from 50000-50010 to 50000-50100. Please set the range in Docker CLI or Docker Compose to 50000-50100</strong></li>
+<li> FFMPEG version bumped from 6.0.1 to 7.0.2</li> 
+<li> DOTNET version bumped to 9.0</li>
+<li> Environment Variable <code>WEBUI_PORT</code> is now changed to <code>AGENTDVR_WEBUI_PORT</code>. Those who use Environment Variable to change the Port for Web UI, please use <code>AGENTDVR_WEBUI_PORT</code> from now on.</li>
+<li> TURN Server Port range is changed from <code>50000-50010</code> to <code>50000-50100</code>. Please set the range in Docker CLI or Docker Compose to <code>50000-50100</code></li>
 </ul>
 <p> - <b>The Following images: <code>gpu-hwaccel-latest</code>,<code>vlc-hwaccel-latest</code> & <code>vlc-support-latest</code> will be taken down on 1st August 2024. Some images were re-uploaded. The Versions that have been re-uploaded are from 5.3.5.0 to the 5.6.0.0 AgentDVR versions. Only the Default tags were re-uploaded & do incorporate all the features combined that were avalable on the previously maintained 4 types of images in itself. Sorry for the inconvenience!</b>This is done inorder to Raid Bug detection, complexity reduction and ease of maintanance</p>
 <p> - Alhamdulillah, The <strong>ARMHF</strong> image has been fixed. Special Thanks To <strong> Sean T</strong> for fixing the underlying issues. For <strong>ARM32-bit/ARMHF</strong> devices, please download image version greater or equal to <strong>4.8.2.0</strong>.</p>
@@ -81,7 +81,7 @@
       <td align="center">5.8.2.0-beta</td>
       <td align="center">⚠️</td>
       <td>"iSpy Agent DVR" beta realese for testing</td>
-      <td>Needs thorough Testing</td>
+      <td>⚠️ THOROUGH TESTING REQUIRED ⚠️</td>
     </tr>
   </tbody>
 </table>
@@ -394,18 +394,18 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
 
 <p><strong> - Major Changes</strong></p>
 <ul>
-<li><strong>5.8.1.0:</strong> - FFMPEG version bumped from 6.0.1 to 7.0.2</li> 
-<li><strong>5.8.1.0:</strong> - DOTNET version bumped to 9.0</li>
-<li><strong>5.8.1.0:</strong> - Environment Variable WEBUI_PORT is now changed to AGENTDVR_WEBUI_PORT. Those who use Environment Variable to change the Port for Web UI, please use AGENTDVR_WEBUI_PORT from now on.</li>
+<li><strong>5.8.1.0:</strong> - ⚠️ FFMPEG version bumped from 6.0.1 to 7.0.2</li> 
+<li><strong>5.8.1.0:</strong> - ⚠️ DOTNET version bumped to 9.0</li>
+<li><strong>5.8.1.0:</strong> - ⚠️⚠️⚠️ Environment Variable <code>WEBUI_PORT</code> is now changed to <code>AGENTDVR_WEBUI_PORT</code>. Those who use Environment Variable to change the Port for Web UI, please use <code>AGENTDVR_WEBUI_PORT</code> from now on.</li>
 <li><strong>5.8.1.0:</strong> - <code>mekayelank/ispyagentdvr</code> image is now fully backword compatible with <code>doitandbedone/ispyagentdvr</code> image. From now on, you don't have to change the directory mapping to switch from <code>doitandbedone/ispyagentdvr</code> to <code>mekayelank/ispyagentdvr</code></li>
-<li><strong>5.8.1.0:</strong> - TURN Server Port range changed from 50000-50010 to 50000-50100. Please set the range in Docker CLI or Docker Compose to 50000-50100</li>
+<li><strong>5.8.1.0:</strong> - ⚠️⚠️⚠️ TURN Server Port range changed from <code>50000-50010</code> to <code>50000-50100</code>. Please set the range in Docker CLI or Docker Compose to <code>50000-50100</code></li>
 <li><strong>5.3.5.0:</strong> - Fixed HW-Accelerated Encode/Decode for AMD, Nvidia & Intel GPUs (From v5.3.5.0 GPU Accelerated Encode/Decode is Tested WORKING in x86_64 but improvements maybe needed. Please submit issues in github, if one faces any.)</li> 
 <li><strong>5.2.8.0 :</strong> - (BETA) Added HW-Acceleration for Nvidia, AMD & Intel GPUs & iGPUs (in x86_64). Also added HW-Acceleration for Raspberry Pi 4 and beyond. Related configs may need to be added to the /boot/config.txt</li> 
 <li><strong>4.8.2.0:</strong> - Fixed ARMHF dependency issues and other improvements.</li> 
-<li><strong>4.8.0.0:</strong> - Major Bug fixes with ONVIF fix</li> 
+<li><strong>4.8.0.0:</strong> - ⚠️ Major Bug fixes with ONVIF fix</li> 
 <li><strong>4.7.4.0:</strong> <ul> <li> Fixed bump FFmpeg 6 version that was crashing on missing GPU drivers</li>  <li> Add TURN server option to local server settings.</li></ul>
 </li>
-<li><strong>4.7.3.0:</strong> - Bumped FFmpeg version from 5 to 6.</li>
+<li><strong>4.7.3.0:</strong> - ⚠️ Bumped FFmpeg version from 5 to 6.</li>
 <li><strong>4.1.2.0:</strong> - Initial Release.</li>
 </ul>
 
