@@ -35,7 +35,7 @@
   </tbody>
 </table>
 <h2>Anouncements:</h2>
-<p> - <b>PLEASE NOTE: Beta version (5.8.1.0 & 5.8.2.0) of iSpyagentDVR has been released for all the BRAVE HEARTED iSpyAgentDVR lovers to test the BLEEDING EDGE!</b></p>
+<p> - <b>PLEASE NOTE: Beta version (5.8.1.0, 5.8.2.0 & 5.8.3.0) of iSpy AgentDVR has been released for all the BRAVE HEARTED iSpyAgentDVR lovers to test the BLEEDING EDGE!</b></p>
 <p><strong> ⚠️⚠️⚠️ WARNNING!!! Beta versions should not be used in mission critical systems! ⚠️⚠️⚠️</strong></p>
 <p>
  - <b>The following possible BREAKING CHANGES will be present in every future deployments</b></p>
@@ -78,7 +78,7 @@
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
-      <td align="center">5.8.2.0-beta</td>
+      <td align="center">5.8.3.0-beta</td>
       <td align="center">⚠️</td>
       <td>"iSpy Agent DVR" beta realese for testing</td>
       <td>⚠️ THOROUGH TESTING REQUIRED ⚠️</td>
