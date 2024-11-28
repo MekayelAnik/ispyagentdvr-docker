@@ -224,6 +224,27 @@ services:
     - /dev/dri/card0:/dev/dri/card0</code></pre>
 <p><strong>docker cli</strong></p>
 <pre><code>--device /dev/dri/renderD128:/dev/dri/renderD128 --device /dev/dri/card0:/dev/dri/card0</code></pre>
+
+<h3>For Rockchip SBC's intergrated VPU, use the CLI command below</h3>
+<pre><code>docker run -d \
+  --name=ispyagentdvr \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e AGENTDVR_WEBUI_PORT=8090 \
+  -e TZ=Asia/Dhaka \
+  -p 8090:8090 \
+  -p 3478:3478/udp \
+  -p 50000-50100:50000-50100/udp \
+  -v /path/to/config:/AgentDVR/Media/XML \
+  -v /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media \
+  -v /path/to/commands:/AgentDVR/Commands \
+  --restart unless-stopped \
+`for dev in dri dma_heap mali0 rga mpp_service \
+   iep mpp-service vpu_service vpu-service \
+   hevc_service hevc-service rkvdec rkvenc vepu h265e ; do \
+  [ -e "/dev/$dev" ] && echo " --device /dev/$dev"; \
+ done` 
+  mekayelanik/ispyagentdvr:latest</code></pre>
 <h4>DISCLAIMER: Jellyfin FFMPEG and corresponding ideas were used in this image to enable the HW-Acceleration</h4>
 <h2>Parameters</h2>
 <p>Container images are configured using parameters passed at runtime (such as those above). These parameters are separated by a colon and indicate <code>&lt;external&gt;:&lt;internal&gt;</code> respectively. For example, <code>-p 8090:80</code> would expose port <code>80</code> from inside the container to be accessible from the host's IP on port <code>8090</code> outside the container. </p>
