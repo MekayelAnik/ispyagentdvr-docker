@@ -35,7 +35,7 @@
   </tbody>
 </table>
 <h2>Anouncements:</h2>
-<p> - <b>PLEASE NOTE: Beta version (5.8.1.0, 5.8.2.0 & 5.8.3.0) of iSpy AgentDVR has been released for all the BRAVE HEARTED iSpyAgentDVR lovers to test the BLEEDING EDGE!</b></p>
+<p> - <b>PLEASE NOTE: Beta version (5.9.4.0, 5.9.5.0 & 5.9.6.0) of iSpy AgentDVR has been released for all the BRAVE HEARTED iSpyAgentDVR lovers to test the BLEEDING EDGE!</b></p>
 <p><strong> ⚠️⚠️⚠️ WARNNING!!! Beta versions should not be used in mission critical systems! ⚠️⚠️⚠️</strong></p>
 <p>
  - <b>The following possible BREAKING CHANGES will be present in every future deployments</b></p>
@@ -72,16 +72,22 @@
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
+      <td align="center">beta</td>
+      <td align="center">⚠️</td>
+      <td>"iSpy Agent DVR" BETA releases image</td>
+      <td>⚠️ LATEST BETA for "BETA TESTING". Backup config before trying!!! ⚠️</td>
+    </tr>
+    <tr>
       <td align="center">5.8.0.0</td>
       <td align="center">✅</td>
       <td>"iSpy Agent DVR" Static version 5.8.0.0 image</td>
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
-      <td align="center">5.8.3.0-beta</td>
+      <td align="center">5.9.6.0-beta</td>
       <td align="center">⚠️</td>
       <td>"iSpy Agent DVR" beta realese for testing</td>
-      <td>⚠️ THOROUGH TESTING REQUIRED ⚠️</td>
+      <td>⚠️ THOROUGH TESTING REQUIRED. Backup config before trying!!! ⚠️</td>
     </tr>
   </tbody>
 </table>
@@ -415,6 +421,7 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
 
 <p><strong> - Major Changes</strong></p>
 <ul>
+<li><strong>5.8.4.0:</strong> - ⚠️⚠️⚠️ Config files file format changed from XML to JSON ⚠️⚠️⚠️</li> 
 <li><strong>5.8.1.0:</strong> - ⚠️ FFMPEG version bumped from 6.0.1 to 7.0.2</li> 
 <li><strong>5.8.1.0:</strong> - ⚠️ DOTNET version bumped to 9.0</li>
 <li><strong>5.8.1.0:</strong> - ⚠️⚠️⚠️ Environment Variable <code>WEBUI_PORT</code> is now changed to <code>AGENTDVR_WEBUI_PORT</code>. Those who use Environment Variable to change the Port for Web UI, please use <code>AGENTDVR_WEBUI_PORT</code> from now on.</li>
