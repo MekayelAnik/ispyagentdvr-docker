@@ -84,9 +84,9 @@
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
-      <td align="center">5.9.6.0-beta</td>
+      <td align="center">6.0.4.0-beta</td>
       <td align="center">⚠️</td>
-      <td>"iSpy Agent DVR" beta realese for testing</td>
+      <td>"iSpy Agent DVR" 6.0.4.0 beta realese for testing</td>
       <td>⚠️ THOROUGH TESTING REQUIRED. Backup config before trying!!! ⚠️</td>
     </tr>
   </tbody>
@@ -421,6 +421,7 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
 
 <p><strong> - Major Changes</strong></p>
 <ul>
+<li><strong>6.0.1.0:</strong> - ⚠️⚠️⚠️ Added driver support for Intel Battlemage GPUs ⚠️⚠️⚠️</li> 
 <li><strong>5.8.4.0:</strong> - ⚠️⚠️⚠️ Config files file format changed from XML to JSON ⚠️⚠️⚠️</li> 
 <li><strong>5.8.1.0:</strong> - ⚠️ FFMPEG version bumped from 6.0.1 to 7.0.2</li> 
 <li><strong>5.8.1.0:</strong> - ⚠️ DOTNET version bumped to 9.0</li>
