@@ -1,0 +1,4 @@
+build_logs
+resources/build_data
+resources/build-timestamp
+Dockerfile.ispyagentdvr
