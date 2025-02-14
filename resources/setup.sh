@@ -26,7 +26,8 @@ setup_coturn() {
     {
         echo "listening_port=${port}"
         echo "auth_secret=${auth_secret}"
-        #echo "turn_only=true"
+        # COMMENT OUT NEXT LINE FOR DEPLOYMENT
+        echo "turn_only=true"
     } > "/AgentDVR/Media/XML/${settings_file}"
     echo "Configuration saved to ${settings_file}"
 
