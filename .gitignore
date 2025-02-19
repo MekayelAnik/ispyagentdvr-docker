@@ -6,3 +6,4 @@ Dockerfile.ispyagentdvr
 /.vs
 /DockerfileModifier.sh
 /Dockerfile.ispyagentdvr-docker
+/Dockerfile
