@@ -3,3 +3,7 @@ resources/build_data
 resources/build-timestamp
 resources/tag
 Dockerfile.ispyagentdvr
+/.vs
+/DockerfileModifier.sh
+/Dockerfile.ispyagentdvr-docker
+/Dockerfile
