@@ -37,10 +37,10 @@ else
    EXPOSE 443
 
     # STUN server port
-    EXPOSE 3478/udp
+   EXPOSE 3478/udp 3478/tcp
 
     # TURN server UDP port range
-   EXPOSE 50000-50100/udp
+   EXPOSE 50000-50100/udp 50000-50100/tcp
 
     #Data volumes
    VOLUME ["/AgentDVR/Media/XML", "/AgentDVR/Media/WebServerRoot/Media", "/AgentDVR/Commands"]
