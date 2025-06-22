@@ -27,7 +27,7 @@ else
             mkdir -p /home/agentdvr/AgentDVR/Commands && \
             chmod -R 777 /home/agentdvr/AgentDVR/Commands && \
             name="$(whoami)" && \
-            echo "Adding permission for USER:$name to local device (GPU) access" && \
+            echo "Adding permission for USER:root to local device (GPU) access" && \
             usermod -aG video "$name" && \
             echo "Added permission for USER:$name to GPU access" && \
             usermod -aG video agentdvr && \
@@ -38,7 +38,8 @@ else
             echo "agentdvr ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers' >> ./"Dockerfile.$REPO_NAME"
     echo -e '
 COPY --chown=agentdvr:agentdvr ./resources /home/agentdvr/AgentDVR
-RUN chmod -R 0774 /home/agentdvr/AgentDVR && \
+RUN echo "Running setup script..." && \
+chmod -R 0775 /home/agentdvr/AgentDVR && \
     bash /home/agentdvr/AgentDVR/setup.sh  && \
     bash /home/agentdvr/AgentDVR/cleanup.sh  && \
     rm -vrf /home/agentdvr/AgentDVR/cleanup.sh
@@ -65,17 +66,11 @@ RUN chmod -R 0774 /home/agentdvr/AgentDVR && \
     EXPOSE 443
 
     # STUN server port
-   EXPOSE 3478/udp
+   EXPOSE 3478/udp 3478/tcp
 
     # TURN server UDP port range
     EXPOSE 50000-50100/udp
 
-   EXPOSE 50000-50100/udp 50000-50100/tcp
-
-    #Data volumes
-   VOLUME ["/AgentDVR/Media/XML", "/AgentDVR/Media/WebServerRoot/Media", "/AgentDVR/Commands"]
-
->>>>>>> 17ff8b4577c1eee1460f95bfe1c291caba779ba6
     # Define service entrypoint
     CMD ["/home/agentdvr/AgentDVR/Agent.sh"]'  >> ./"Dockerfile.$REPO_NAME"
 fi

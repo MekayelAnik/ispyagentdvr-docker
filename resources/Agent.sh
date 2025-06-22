@@ -2,23 +2,25 @@
 export DEBUG_MODE='false'
 export DOTNET_SYSTEM_IO_DISABLEFILELOCKING=1
 ORANGE='\033[0;33m'
-WARN_COLOR='\033[1;33m'  # Bold yellow
-GREEN_BOLD='\033[1;32m'  # Bright/bold green
-BLUE_BRIGHT='\033[1;34m'  # Bold bright blue
-COL1='\033[38;5;39m'  # Deep sky blue
-COL2='\033[38;5;63m'  # Slate blue
+WARN_COLOR='\033[1;33m'
+GREEN_BOLD='\033[1;32m'
+BLUE_BRIGHT='\033[1;34m'
+COL1='\033[38;5;63m'
 NC='\033[0m'
 
 # Constants and paths
 declare -r \
-    REQUIRED_DIRS=("/home/agentdvr/AgentDVR/Media/XML" "/home/agentdvr/AgentDVR/Media/WebServerRoot/Media" "/home/agentdvr/AgentDVR/Commands" "/home/agentdvr/AgentDVR/Masks") \
+    REQUIRED_DIRS=("/home/agentdvr/AgentDVR/Media/XML" "/home/agentdvr/AgentDVR/Media/WebServerRoot/Media" "/home/agentdvr/AgentDVR/Commands" "/home/agentdvr/AgentDVR/Masks" "/home/agentdvr/AgentDVR/sounds") \
     BANNER_FILE="/home/agentdvr/AgentDVR/banner.sh" \
     AGENT_BINARY="/home/agentdvr/AgentDVR/Agent" \
     CUSTOM_ENTRYPOINT="/home/agentdvr/AgentDVR/Media/XML/customEntrypoint.sh" \
     CONFIG_DIR="/home/agentdvr/AgentDVR/Media/XML" \
     COMMANDS_DIR="/home/agentdvr/AgentDVR/Commands" \
-    SESSION_LOG="/home/agentdvr/AgentDVR/Media/sessionlog.txt"
-    FIRST_RUN="/home/agentdvr/AgentDVR/FirstRun"
+    SOUNDS_DIR="/home/agentdvr/AgentDVR/sounds" \
+    MASKS_DIR="/home/agentdvr/AgentDVR/Masks" \
+    SESSION_LOG="/home/agentdvr/AgentDVR/Media/sessionlog.txt" \
+    FIRST_RUN="/home/agentdvr/AgentDVR/FirstRun" \
+    CONTENT_DIR="/home/agentdvr/AgentDVR/Content"
 
 # Error handling function
 error_exit() {
@@ -31,50 +33,113 @@ if [[ -f "$BANNER_FILE" ]]; then
     source "$BANNER_FILE" || :
 fi
 
+# Function to set immutable permissions and ownership
+set_immutable_permissions() {
+    local target="$1"
+    local perm="$2"
+    local owner="${3:-agentdvr:agentdvr}"
+    
+    # Set ownership first
+    chown "$owner" "$target" || return 1
+    
+    # Set the permissions
+    chmod "$perm" "$target" || return 1
+    
+    # Make immutable if possible
+    if command -v chattr &>/dev/null; then
+        chattr +i "$target" 2>/dev/null
+    fi
+    
+    return 0
+}
+
+# Move content directories and remove Content folder
+migrate_content_directories() {
+    if [[ -d "$CONTENT_DIR" ]]; then
+        printf "${BLUE_BRIGHT}Migrating content directories...${NC}\n"
+        
+        # Move Commands directory with immutable 0777 permissions
+        if [[ -d "${CONTENT_DIR}/Commands" ]]; then
+            printf "Moving Commands directory with 0777 permissions...\n"
+            if [[ -d "$COMMANDS_DIR" ]]; then
+                cp -rn "${CONTENT_DIR}/Commands/"* "$COMMANDS_DIR/" || printf "${WARN_COLOR}Warning: Some files could not be copied to Commands directory${NC}\n"
+            else
+                mv "${CONTENT_DIR}/Commands" "$COMMANDS_DIR" || error_exit "Failed to move Commands directory"
+            fi
+            set_immutable_permissions "$COMMANDS_DIR" "0777" || error_exit "Failed to set immutable permissions for Commands directory"
+        fi
+        
+        # Move sounds directory with immutable 0775 permissions
+        if [[ -d "${CONTENT_DIR}/sounds" ]]; then
+            printf "Moving sounds directory with 0775 permissions...\n"
+            if [[ -d "$SOUNDS_DIR" ]]; then
+                cp -rn "${CONTENT_DIR}/sounds/"* "$SOUNDS_DIR/" || printf "${WARN_COLOR}Warning: Some sound files could not be copied${NC}\n"
+            else
+                mv "${CONTENT_DIR}/sounds" "$SOUNDS_DIR" || error_exit "Failed to move sounds directory"
+            fi
+            set_immutable_permissions "$SOUNDS_DIR" "0775" || error_exit "Failed to set immutable permissions for sounds directory"
+        fi
+        
+        # Move Masks directory with immutable 0775 permissions
+        if [[ -d "${CONTENT_DIR}/Masks" ]]; then
+            printf "Moving Masks directory with 0775 permissions...\n"
+            if [[ -d "$MASKS_DIR" ]]; then
+                cp -rn "${CONTENT_DIR}/Masks/"* "$MASKS_DIR/" || printf "${WARN_COLOR}Warning: Some mask files could not be copied${NC}\n"
+            else
+                mv "${CONTENT_DIR}/Masks" "$MASKS_DIR" || error_exit "Failed to move Masks directory"
+            fi
+            set_immutable_permissions "$MASKS_DIR" "0775" || error_exit "Failed to set immutable permissions for Masks directory"
+        fi
+        
+        # Remove Content directory after migration
+        printf "Removing Content directory...\n"
+        rm -rf "$CONTENT_DIR" || printf "${WARN_COLOR}Warning: Could not completely remove Content directory${NC}\n"
+        
+        printf "${GREEN_BOLD}Content directories migration completed${NC}\n"
+    fi
+}
+
 # Ensure required directories exist with proper permissions
 ensure_directories() {
-    # Fix home directory permissions first (critical for Docker)
+    # First migrate any content directories with immutable permissions
+    migrate_content_directories
+    
+    # Fix home directory permissions
     if [[ $(id -u) -eq 0 ]] && [[ -d "/home/agentdvr" ]]; then
-        if [[ $(stat -c '%a' "/home/agentdvr") -ne 775 ]]; then
-            chmod 0775 -R "/home/agentdvr" || error_exit "Failed to set /home/agentdvr permissions"
-            printf "${GREEN_BOLD}Fixed permissions for /home/agentdvr (now 775)${NC}\n"
-        fi
+        chmod 0755 "/home/agentdvr" || error_exit "Failed to set /home/agentdvr permissions"
     fi
 
-    # Create session log if it doesn't exist
+    # Create and protect session log file
     if [ ! -f "$SESSION_LOG" ]; then
         touch "$SESSION_LOG" || error_exit "Failed to create session log"
-        chown agentdvr:agentdvr "$SESSION_LOG" || error_exit "Failed to set session log ownership"
-        chmod 0775 "$SESSION_LOG" || error_exit "Failed to set session log permissions"
-        printf "Created session log: %s\n" "$SESSION_LOG"
     fi
+    set_immutable_permissions "$SESSION_LOG" "0777" || error_exit "Failed to set immutable permissions for session log"
 
-    # Special handling for Commands directory
-    if [[ ! -d "$COMMANDS_DIR" ]]; then
-        mkdir -p "$COMMANDS_DIR" || error_exit "Failed to create Commands directory"
-        printf "Created Commands directory: %s\n" "$COMMANDS_DIR"
-    fi
-
-    if [[ $(id -u) -eq 0 ]]; then
-        chmod -R 0777 "$COMMANDS_DIR" || error_exit "Failed to set Commands directory permissions"
-        chown -R agentdvr:agentdvr "$COMMANDS_DIR" || error_exit "Failed to set Commands directory ownership"
-    fi
-
-    # Handle other directories
+    # Handle all declared directories
     for dir in "${REQUIRED_DIRS[@]}"; do
-        [[ "$dir" == "$COMMANDS_DIR" ]] && continue
-        
-        if [[ ! -d "$dir" ]]; then
-            mkdir -p "$dir" || error_exit "Failed to create directory: $dir"
-            printf 'Created directory: %s\n' "$dir"
+        # Skip if immutable permissions already set
+        if [[ -e "$dir" ]] && [[ $(lsattr -d "$dir" 2>/dev/null | cut -c5) == "i" ]]; then
+            continue
         fi
         
+        # Create directory if it doesn't exist
+        if [[ ! -d "$dir" ]]; then
+            mkdir -p "$dir" || error_exit "Failed to create directory: $dir"
+        fi
+        
+        # Set permissions if running as root
         if [[ $(id -u) -eq 0 ]]; then
+            # Skip if this is a special directory (handled during migration)
+            [[ "$dir" == "$COMMANDS_DIR" || "$dir" == "$SOUNDS_DIR" || "$dir" == "$MASKS_DIR" ]] && continue
+            
+            # Skip permission setting for CONFIG_DIR (handled separately)
             [[ "$dir" == "$CONFIG_DIR" ]] && continue
             
+            # Default permissions for directories (0755)
             find "$dir" -type d ! -perm 0755 -exec chmod 0755 {} + ||
                 error_exit "Failed to set directory permissions for: $dir"
             
+            # Default permissions for files (0644)
             find "$dir" -type f ! -perm 0644 -exec chmod 0644 {} + ||
                 error_exit "Failed to set file permissions for: $dir"
             
@@ -92,26 +157,26 @@ ensure_directories() {
         fi
     done
     
-    # Special handling for CONFIG_DIR
+    # Special handling for CONFIG_DIR with immutable permissions
     if [[ $(id -u) -eq 0 ]]; then
-        chown -R agentdvr:agentdvr "$CONFIG_DIR" ||
-            error_exit "Failed to set ownership for config directory"
-        chmod -R 0775 "$CONFIG_DIR" ||
-            error_exit "Failed to set permissions for config directory"
+        if [[ ! -e "$CONFIG_DIR" ]] || [[ $(lsattr -d "$CONFIG_DIR" 2>/dev/null | cut -c5) != "i" ]]; then
+            chown -R agentdvr:agentdvr "$CONFIG_DIR" ||
+                error_exit "Failed to set ownership for config directory"
+            set_immutable_permissions "$CONFIG_DIR" "0775" ||
+                error_exit "Failed to set immutable permissions for config directory"
+        fi
     fi
 }
 
 # Validate PUID/PGID
 validate_ids() {
     local valid=1
-    # Check PUID is either empty or a positive number within range
     if [[ -n "$PUID" ]]; then
         if [[ ! "$PUID" =~ ^[0-9]+$ ]] || (( PUID <= 0 || PUID > 2147483647 )); then
             valid=0
         fi
     fi
     
-    # Check PGID is either empty or a positive number within range
     if [[ -n "$PGID" ]]; then
         if [[ ! "$PGID" =~ ^[0-9]+$ ]] || (( PGID <= 0 || PGID > 2147483647 )); then
             valid=0
@@ -124,8 +189,7 @@ validate_ids() {
     return 0
 }
 
-
-# Permission checking with proper output handling
+# Permission checking
 check_write_permissions() {
     local user="$1" errors=0 dir
 
@@ -139,7 +203,6 @@ check_write_permissions() {
         else
             printf 'Checking %s ... \033[1;31mFAILED\033[0m\n' "$dir" >&2
             printf '\033[1;31mERROR: User %s cannot write to: %s\033[0m\n' "$user" "$dir" >&2
-            stat -c 'Permissions: %A Owner: %U:%G' "$dir" >&2
             ((errors++))
         fi
     done
@@ -149,21 +212,18 @@ check_write_permissions() {
     fi
     
     printf "${GREEN_BOLD}All required permissions verified successfully${NC}\n"
-    printf "${GREEN_BOLD}====================================================================${NC}\n"
 }
 
 # User/group setup
 setup_user_group() {
     if [[ -n "$PUID" ]] && ! getent passwd "$PUID" &>/dev/null; then
-        if ! useradd -u "$PUID" -g "${PGID:-$PUID}" -d /AgentDVR -s /bin/false agentdvr; then
+        useradd -u "$PUID" -g "${PGID:-$PUID}" -d /AgentDVR -s /bin/false agentdvr ||
             error_exit "Failed to create user agentdvr"
-        fi
     fi
     
     if [[ -n "$PGID" ]] && ! getent group "$PGID" &>/dev/null; then
-        if ! groupadd -g "$PGID" agentdvr; then
+        groupadd -g "$PGID" agentdvr ||
             error_exit "Failed to create group agentdvr"
-        fi
     fi
 }
 
@@ -173,13 +233,8 @@ set_gpu_permissions() {
     
     find /dev/dri -name 'renderD*' -type c -print0 2>/dev/null | while IFS= read -r -d '' render_device; do
         if (( $(stat -c '%a' "$render_device") != 0666 )); then
-            if ! chmod 0666 "$render_device"; then
+            chmod 0666 "$render_device" || 
                 printf '\033[1;33mWARNING: Failed to set permissions for %s\033[0m\n' "$render_device" >&2
-            else
-                printf "${GREEN_BOLD}====================================================================${NC}\n"
-                printf "${GREEN_BOLD}Updated GPU permissions for %s to 0666\n" "$render_device"
-                printf "${GREEN_BOLD}====================================================================${NC}\n"
-            fi
         fi
     done
 }
@@ -190,41 +245,29 @@ verify_agent_binary() {
         error_exit "Agent binary not found at $AGENT_BINARY"
     fi
     if [[ ! -x "$AGENT_BINARY" ]]; then
-        if ! chmod +x "$AGENT_BINARY"; then
+        chmod +x "$AGENT_BINARY" ||
             error_exit "Agent binary is not executable and couldn't set execute permissions"
-        fi
     fi
 }
 
-# Streamlined agent startup with proper output handling
+# Start agent with proper permissions
 start_agent() {
-    # Ensure required directories exist with proper permissions
     ensure_directories
 
-    
-    # If PUID/PGID are set and valid, run as non-root
     if [[ -n "$PUID$PGID" ]] && validate_ids; then
         if type -P gosu &>/dev/null; then
-
-        printf "${BLUE_BRIGHT}====================================================================${NC}\n"
-        printf "${BLUE_BRIGHT}Running as agentdvr user (PUID: %s PGID: %s)${NC}\n" "${PUID:-null}" "${PGID:-null}"
-        printf "${BLUE_BRIGHT}====================================================================${NC}\n"
-            
+            printf "${BLUE_BRIGHT}Running as agentdvr user (PUID: %s PGID: %s)${NC}\n" "${PUID:-null}" "${PGID:-null}"
             setup_user_group
             check_write_permissions "agentdvr"
             set_gpu_permissions
             exec gosu "agentdvr:agentdvr" "$AGENT_BINARY"
         else
             printf '\033[1;31mERROR: gosu not found. Cannot switch user.\033[0m\n' >&2
-            printf '\033[1;33mFalling back to direct execution\033[0m\n' >&2
         fi
     fi
     
     # Fallback execution
-    printf "${COL1}====================================================================${NC}\n"
-    printf "${COL2}Running as current user: %s${NC}\n" "$(id -un)"
-    printf "${COL1}====================================================================${NC}\n"
-    
+    printf "${COL1}Running as current user: %s${NC}\n" "$(id -un)"
     check_write_permissions "$(id -un)"
     exec "$AGENT_BINARY"
 }
