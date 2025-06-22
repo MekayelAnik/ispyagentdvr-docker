@@ -131,7 +131,11 @@ echo "Unzipping AgentDVR"
 if ! sudo -u agentdvr unzip AgentDVR.zip; then
     echo "Failed to unzip AgentDVR.zip"
     exit 1
+else 
+    echo "Unzipped AgentDVR.zip successfully!"
+    mv -vf /home/agentdvr/AgentDVR/Content/* /home/agentdvr/AgentDVR/ || { echo "Failed to move contents"; exit 1; }
 fi
+
 if ! chmod 0775 "$AGENT_DIR"; then
     error_exit "Failed to set permissions for directory: $AGENT_DIR"
 fi
