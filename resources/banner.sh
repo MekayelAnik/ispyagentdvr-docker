@@ -1,14 +1,31 @@
 #!/bin/bash
-echo "________________________________________________________________________________________________________________________________________________"
-echo "oo .d88888b                        .d888888                               dP      888888ba  dP     dP  888888ba"
-echo "   88.                            d8     88                               88      88     8b 88     88  88     8b" 
-echo "dP  Y88888b. 88d888b. dP    dP    88aaaaa88a .d8888b. .d8888b. 88d888b. d8888P    88     88 88    .8P a88aaaa8P  "
-echo "88        8b 88    88 88    88    88     88  88    88 88ooood8 88    88   88      88     88 88    d8   88    8b. "
-echo "88 d8    .8P 88.  .88 88.  .88    88     88  88.  .88 88.  ... 88    88   88      88    .8P 88  .d8P   88     88 "
-echo "dP  Y88888P  88Y888P   8888P88    88     88   8888P88  88888P  dP    dP   dP      8888888P  888888     dP     dP "
-echo "             88            .88                    .88                                                        "    
-echo "             dP        d8888P                 d8888P         "                                                                    
 
+# Constants
+CURRENT_PORT_FILE="/home/agentdvr/AgentDVR/Media/XML/current_port.txt"
+TAG_FILE="/home/agentdvr/AgentDVR/tag"
+BASE_TIMESTAMP="/usr/bin/share/base-image-timestamp"
+BUILD_TIMESTAMP="/home/agentdvr/AgentDVR/build-timestamp"
+PRICING_URL="https://www.ispyconnect.com/pricing.aspx"
+
+# Function to print separator line
+print_separator() {
+    echo "________________________________________________________________________________________________________________________________________________"
+}
+
+# Print ASCII art
+print_ascii_art() {
+    echo "oo .d88888b                        .d888888                               dP      888888ba  dP     dP  888888ba"
+    echo "   88.                            d8     88                               88      88     8b 88     88  88     8b" 
+    echo "dP  Y88888b. 88d888b. dP    dP    88aaaaa88a .d8888b. .d8888b. 88d888b. d8888P    88     88 88    .8P a88aaaa8P  "
+    echo "88        8b 88    88 88    88    88     88  88    88 88ooood8 88    88   88      88     88 88    d8   88    8b. "
+    echo "88 d8    .8P 88.  .88 88.  .88    88     88  88.  .88 88.  ... 88    88   88      88    .8P 88  .d8P   88     88 "
+    echo "dP  Y88888P  88Y888P   8888P88    88     88   8888P88  88888P  dP    dP   dP      8888888P  888888     dP     dP "
+    echo "             88            .88                    .88                                                        "    
+    echo "             dP        d8888P                 d8888P         "                                                                    
+}
+
+# Print the exact original colored banner
+print_colored_banner() {
 printf "\e[49m                                           \e[38;2;0;0;0;49m_______\e[38;2;1;0;0;49m_\e[38;2;0;0;0;49m__\e[48;2;0;0;0m       \e[38;2;0;0;0;49m_________\e[49m                               \e[m
 \e[49m                                    \e[38;2;0;0;0;49m___\e[48;2;0;0;0m                                \e[38;2;0;0;0;48;2;0;1;0m_\e[48;2;0;0;0m \e[38;2;0;0;0;49m___\e[49m                        \e[m
 \e[49m                                \e[38;2;0;0;0;49m__\e[48;2;0;0;0m  \e[38;2;0;0;1;48;2;0;0;0m_\e[48;2;0;0;0m    \e[38;2;0;0;0;48;2;1;0;0m_\e[38;2;0;0;0;48;2;0;1;0m_\e[38;2;1;0;0;48;2;0;0;0m_\e[48;2;0;0;0m        \e[38;2;1;0;0;48;2;0;0;0m_\e[48;2;0;0;0m                          \e[38;2;0;0;0;49m___\e[49m                  \e[m
@@ -40,37 +57,59 @@ printf "\e[49m                                           \e[38;2;0;0;0;49m______
 \e[49m                               \e[49;38;2;0;0;0m   \e[48;2;0;0;0m         \e[38;2;0;0;0;48;2;1;0;0m_\e[48;2;0;0;0m        \e[38;2;0;0;0;48;2;1;0;0m_\e[48;2;0;0;0m         \e[49;38;2;0;0;0m   \e[49m                                   \e[m
 \e[49m                                       \e[49;38;2;0;0;0m         \e[48;2;0;0;0m  \e[38;2;0;0;0;48;2;1;0;0m_\e[48;2;0;0;0m  \e[49;38;2;0;0;0m   \e[49;38;2;1;0;0m \e[49;38;2;0;0;0m  \e[49m                                         \e[m
 ";
-echo ""
-echo " 888888ba                                      dP         dP        dP                                             dP                dP  "
-echo " 88     8b                                     88         88        88                                             88                88  "
-echo " a88aaaa8P 88d888b. .d8888b. dP    dP .d8888b. 88d888b. d8888P    d8888P .d8888b.    dp    dp .d8888b. dP    dP    88d888b. dP    dP     "
-echo " 88    8b. 88    88 88    88 88    88 88    88 88    88   88        88   88    88    88    88 88    88 88    88    88    88 88    88     " 
-echo " 88    .88 88       88.  .88 88.  .88 88.  .88 88    88   88        88   88.  .88    88.  .88 88.  .88 88.  .88    88.  .88 88.  .88 dP  "
-echo " 88888888P dP        88888P   88888P   8888P88 dP    dP   888P      888P  88888P      8888P88  88888P   88888P     88Y8888   8888P88 88  "
-echo "                                           .88                                           .88                                     .88     "
-echo "                                       d8888P                                        d8888P                                  d8888P"
-echo " ███╗   ███╗██████╗        ███╗   ███╗███████╗██╗  ██╗ █████╗ ██╗   ██╗███████╗██╗          █████╗ ███╗   ██╗██╗██╗  ██╗       "           
-echo " ████╗ ████║██╔══██╗       ████╗ ████║██╔════╝██║ ██╔╝██╔══██╗╚██╗ ██╔╝██╔════╝██║         ██╔══██╗████╗  ██║██║██║ ██╔╝      "            
-echo " ██╔████╔██║██║  ██║       ██╔████╔██║█████╗  █████╔╝ ███████║ ╚████╔╝ █████╗  ██║         ███████║██╔██╗ ██║██║█████╔╝      "             
-echo " ██║╚██╔╝██║██║  ██║       ██║╚██╔╝██║██╔══╝  ██╔═██╗ ██╔══██║  ╚██╔╝  ██╔══╝  ██║         ██╔══██║██║╚██╗██║██║██╔═██╗     "              
-echo " ██║ ╚═╝ ██║██████╔╝██╗    ██║ ╚═╝ ██║███████╗██║  ██╗██║  ██║   ██║   ███████╗███████╗    ██║  ██║██║ ╚████║██║██║  ██╗   "               
-echo " ╚═╝     ╚═╝╚═════╝ ╚═╝    ╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚══════╝    ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═╝  "                                                                                                                                                                        
-echo "________________________________________________________________________________________________________________________________________________"
-echo -e "\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Starting iSpy Agent DVR Surveillance System! <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< \n"
-DISP_PORT=$(cat /AgentDVR/Media/XML/current_port.txt)
-TAG=$(cat /AgentDVR/tag)
-echo -e " Current AgentDVR Docker Image: $TAG"
-echo -e " If this Container is deployed on a Docker-Macvlan or Docker-IPvlan Network, then the IP Address of this AgentDVR container is: $(hostname -i), Otherwise the AgentDVR IP is the IP of your HOST Server IP or localhost if you are accessing the WebUI from a Browser on the HOST Server.\n"
-echo -e " AgentDVR WebUI can be accessed on PORT: $DISP_PORT\n"
-if [ "$DISP_PORT" == '80' ]; then 
-        DISP_PORT=''
-else
-        DISP_PORT=":$DISP_PORT"
-fi
-echo -e " Therefore Most Probable AgentDVR WebUI Address: $(hostname -i)$DISP_PORT or Your-HOST-Server-IP$DISP_PORT or localhost$DISP_PORT"
-echo -e " iSpy Agent DVR is free to use locally for private use. You can add as many cameras as you like."
-echo -e " SSL secured web access, SMS, Twitter, email alerts, mobile device access, cloud uploads, Virtual Reality and other services that use iSpy Agent DVR online platform require a subscription or an annual payment."
-echo -e " If you desire to obtain a Subscription plan or want a Business License, please visit https://www.ispyconnect.com/pricing.aspx\n\n"
-cat /usr/bin/share/base-image-timestamp
-cat /AgentDVR/build-timestamp
-echo "This Container was started on: $(date)"
+}
+
+# Print AgentDVR information
+print_agent_info() {
+    echo ""
+    echo " 888888ba                                      dP         dP        dP                                             dP                dP  "
+    echo " 88     8b                                     88         88        88                                             88                88  "
+    echo " a88aaaa8P 88d888b. .d8888b. dP    dP .d8888b. 88d888b. d8888P    d8888P .d8888b.    dp    dp .d8888b. dP    dP    88d888b. dP    dP     "
+    echo " 88    8b. 88    88 88    88 88    88 88    88 88    88   88        88   88    88    88    88 88    88 88    88    88    88 88    88     " 
+    echo " 88    .88 88       88.  .88 88.  .88 88.  .88 88    88   88        88   88.  .88    88.  .88 88.  .88 88.  .88    88.  .88 88.  .88 dP  "
+    echo " 88888888P dP        88888P   88888P   8888P88 dP    dP   888P      888P  88888P      8888P88  88888P   88888P     88Y8888   8888P88 88  "
+    echo "                                           .88                                           .88                                     .88     "
+    echo "                                       d8888P                                        d8888P                                  d8888P"
+    echo " ███╗   ███╗██████╗        ███╗   ███╗███████╗██╗  ██╗ █████╗ ██╗   ██╗███████╗██╗          █████╗ ███╗   ██╗██╗██╗  ██╗       "           
+    echo " ████╗ ████║██╔══██╗       ████╗ ████║██╔════╝██║ ██╔╝██╔══██╗╚██╗ ██╔╝██╔════╝██║         ██╔══██╗████╗  ██║██║██║ ██╔╝      "            
+    echo " ██╔████╔██║██║  ██║       ██╔████╔██║█████╗  █████╔╝ ███████║ ╚████╔╝ █████╗  ██║         ███████║██╔██╗ ██║██║█████╔╝      "             
+    echo " ██║╚██╔╝██║██║  ██║       ██║╚██╔╝██║██╔══╝  ██╔═██╗ ██╔══██║  ╚██╔╝  ██╔══╝  ██║         ██╔══██║██║╚██╗██║██║██╔═██╗     "              
+    echo " ██║ ╚═╝ ██║██████╔╝██╗    ██║ ╚═╝ ██║███████╗██║  ██╗██║  ██║   ██║   ███████╗███████╗    ██║  ██║██║ ╚████║██║██║  ██╗   "               
+    echo " ╚═╝     ╚═╝╚═════╝ ╚═╝    ╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   ╚══════╝╚══════╝    ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝╚═╝  ╚═╝  "                                                                                                                                                                        
+}
+
+# Print system information
+print_system_info() {
+    print_separator
+    echo -e "\n >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Starting iSpy Agent DVR Surveillance System! <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< \n"
+    
+    local disp_port=$(<"$CURRENT_PORT_FILE")
+    local tag=$(<"$TAG_FILE")
+    local container_ip=$(hostname -I | awk '{print $1}')
+    local port_display=":$disp_port"
+    
+    [[ "$disp_port" == '80' ]] && port_display=""
+
+    echo -e " Current AgentDVR Docker Image: $tag"
+    echo -e " If this Container is deployed on a Docker-Macvlan or Docker-IPvlan Network, then the IP Address of this AgentDVR container is: $container_ip, Otherwise the AgentDVR IP is the IP of your HOST Server IP or localhost if you are accessing the WebUI from a Browser on the HOST Server.\n"
+    echo -e " AgentDVR WebUI can be accessed on PORT: ${disp_port:-80}\n"
+    echo -e " Therefore Most Probable AgentDVR WebUI Address: ${container_ip}${port_display} or Your-HOST-Server-IP${port_display} or localhost${port_display}"
+    echo -e " iSpy Agent DVR is free to use locally for private use. You can add as many cameras as you like."
+    echo -e " SSL secured web access, SMS, Twitter, email alerts, mobile device access, cloud uploads, Virtual Reality and other services that use iSpy Agent DVR online platform require a subscription or an annual payment."
+    echo -e " If you desire to obtain a Subscription plan or want a Business License, please visit $PRICING_URL\n\n"
+    
+    [[ -f "$BASE_TIMESTAMP" ]] && cat "$BASE_TIMESTAMP"
+    [[ -f "$BUILD_TIMESTAMP" ]] && cat "$BUILD_TIMESTAMP"
+    echo "This Container was started on: $(date)"
+}
+
+# Main execution
+main() {
+    print_separator
+    print_ascii_art
+    print_colored_banner
+    print_agent_info
+    print_system_info
+}
+
+main
