@@ -27,7 +27,7 @@ else
             mkdir -p /home/agentdvr/AgentDVR/Commands && \
             chmod -R 777 /home/agentdvr/AgentDVR/Commands && \
             name="$(whoami)" && \
-            echo "Adding permission for USER:root to local device (GPU) access" && \
+            echo "Adding permission for USER:$name to local device (GPU) access" && \
             usermod -aG video "$name" && \
             echo "Added permission for USER:$name to GPU access" && \
             usermod -aG video agentdvr && \
@@ -65,13 +65,11 @@ RUN chmod -R 0774 /home/agentdvr/AgentDVR && \
     EXPOSE 443
 
     # STUN server port
-   EXPOSE 3478/udp 3478/tcp
+   EXPOSE 3478/udp
 
     # TURN server UDP port range
-<<<<<<< HEAD
     EXPOSE 50000-50100/udp
-   
-=======
+
    EXPOSE 50000-50100/udp 50000-50100/tcp
 
     #Data volumes
