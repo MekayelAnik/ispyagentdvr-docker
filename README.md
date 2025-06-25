@@ -76,9 +76,9 @@
       <td>⚠️ LATEST BETA for "BETA TESTING". Backup config before trying!!! Discouraged to use on mission-critical environments!!! ⚠️</td>
     </tr>
     <tr>
-      <td align="center">6.5.0.0</td>
+      <td align="center">6.5.2.0</td>
       <td align="center">✅</td>
-      <td>"iSpy Agent DVR" Static version 6.5.0.0 image</td>
+      <td>"iSpy Agent DVR" Static version 6.5.2.0 image</td>
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
@@ -447,6 +447,7 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
 
 <p><strong> - Major Changes</strong></p>
 <ul>
+<li><strong>6.5.1.0:</strong> - ✅Regular version updated to 6.5.1.0. Full AgentDVR log is now visible in Docker logs. </li>
 <li><strong>6.5.0.0:</strong> - ✅Regular version updated to 6.5.0.0. Updated Intel GPU driver to Comute Runtime Version: 25.22.33944.8, AMD Mesa Driver Version: 25.0.7-2. ⚠️⚠️⚠️Please Update your directory mappings!⚠️⚠️⚠️</li>
 <li><strong>6.3.4.0:</strong> - ⚠️⚠️⚠️ <b>Directory Structure has been changed. If you are a previous user of ispyagentdvr-docker, Please Update your directory mappings!</b> ⚠️⚠️⚠️</li>
 <li><strong>6.3.4.0:</strong> - ✅Regular version updated to 6.3.4.0. Updated Intel GPU driver to Comute Runtime Version: 25.18.33578.6, AMD Mesa Driver Version:  25.0.7-1 and updated jellyfin-ffmpeg to 7.1.1-6</li>

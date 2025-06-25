@@ -55,6 +55,7 @@ chmod -R 0775 /home/agentdvr/AgentDVR && \
 
     # Fix a memory leak on encoded recording
     ENV MALLOC_TRIM_THRESHOLD_=100000
+    ENV DOTNET_RUNNING_IN_CONTAINER="true"
     # Disable .NET file locking
     ENV DOTNET_SYSTEM_IO_DISABLEFILELOCKING=1
     ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
