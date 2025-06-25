@@ -34,10 +34,10 @@
     </tr>
   </tbody>
 </table>
-<h2>Anouncements:</h2>
-<p> - <b>PLEASE NOTE: Regular latest version (6.3.4.0) has been released! ⚠️⚠️⚠️ Discouraged to use BETA on mission-critical environments!!! </b></p>
+<h2>🔔🚨📌Important Announcements:📢📢📢</h2>
  - <b>The following possible BREAKING CHANGES will be present in every future deployment</b></p>
 <ul>
+<li> <b>⚠️⚠️⚠️ 6.3.4.0 and on words has been Directory Structure has been changed. If you are a previous user of ispyagentdvr-docker, Please Update your directory mappings! ⚠️⚠️⚠️</b></li>
 <li> FFMPEG version bumped from 7.0.2 to 7.1.1</li> 
 <li> DOTNET version bumped to 9.0</li>
 <li> Environment Variable <code>WEBUI_PORT</code> is now changed to <code>AGENTDVR_WEBUI_PORT</code>. Those who use Environment Variable to change the Port for Web UI, please use <code>AGENTDVR_WEBUI_PORT</code> from now on.</li>
@@ -76,9 +76,9 @@
       <td>⚠️ LATEST BETA for "BETA TESTING". Backup config before trying!!! Discouraged to use on mission-critical environments!!! ⚠️</td>
     </tr>
     <tr>
-      <td align="center">6.4.9.0</td>
+      <td align="center">6.5.0.0</td>
       <td align="center">✅</td>
-      <td>"iSpy Agent DVR" Static version 6.4.9.0 image</td>
+      <td>"iSpy Agent DVR" Static version 6.5.0.0 image</td>
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
@@ -103,9 +103,9 @@ services:
       - AGENTDVR_WEBUI_PORT=8090 
       - TZ=Asia/Dhaka
     volumes:
-      - /path/to/config:/AgentDVR/Media/XML
-      - /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media
-      - /path/to/commands:/AgentDVR/Commands
+      - /path/to/config:/home/agentdvr/AgentDVR/Media/XML
+      - /path/to/recordings:/home/agentdvr/AgentDVR/Media/WebServerRoot/Media
+      - /path/to/commands:/home/agentdvr/AgentDVR/Commands
     ports:
       - 8090:8090
       - 3478:3478/udp
@@ -126,9 +126,9 @@ services:
   -p 8090:8090 \
   -p 3478:3478/udp \
   -p 50000-50100:50000-50100/udp \
-  -v /path/to/config:/AgentDVR/Media/XML \
-  -v /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media \
-  -v /path/to/commands:/AgentDVR/Commands \
+  -v /path/to/config:/home/agentdvr/AgentDVR/Media/XML \
+  -v /path/to/recordings:/home/agentdvr/AgentDVR/Media/WebServerRoot/Media \
+  -v /path/to/commands:/home/agentdvr/AgentDVR/Commands \
   --restart unless-stopped \
   mekayelanik/ispyagentdvr:latest
 </code></pre>
@@ -144,9 +144,9 @@ services:
       - AGENTDVR_WEBUI_PORT=8090 
       - TZ=Asia/Dhaka
     volumes:
-      - /path/to/config:/AgentDVR/Media/XML
-      - /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media
-      - /path/to/commands:/AgentDVR/Commands
+      - /path/to/config:/home/agentdvr/AgentDVR/Media/XML
+      - /path/to/recordings:/home/agentdvr/AgentDVR/Media/WebServerRoot/Media
+      - /path/to/commands:/home/agentdvr/AgentDVR/Commands
     ports:
       - 8090:8090
       - 3478:3478/udp
@@ -181,9 +181,9 @@ services:
       - AGENTDVR_WEBUI_PORT=8090
       - TZ=Asia/Dhaka
     volumes:
-      - /path/to/config:/AgentDVR/Media/XML
-      - /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media
-      - /path/to/commands:/AgentDVR/Commands
+      - /path/to/config:/home/agentdvr/AgentDVR/Media/XML
+      - /path/to/recordings:/home/agentdvr/AgentDVR/Media/WebServerRoot/Media
+      - /path/to/commands:/home/agentdvr/AgentDVR/Commands
     ports:
       - 8090:8090
       - 3478:3478/udp
@@ -201,9 +201,9 @@ services:
   -p 8090:8090 \
   -p 3478:3478/udp \
   -p 50000-50100:50000-50100/udp \
-  -v /path/to/config:/AgentDVR/Media/XML \
-  -v /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media \
-  -v /path/to/commands:/AgentDVR/Commands \
+  -v /path/to/config:/home/agentdvr/AgentDVR/Media/XML \
+  -v /path/to/recordings:/home/agentdvr/AgentDVR/Media/WebServerRoot/Media \
+  -v /path/to/commands:/home/agentdvr/AgentDVR/Commands \
   --restart unless-stopped \
   mekayelanik/ispyagentdvr:latest</code></pre>
 <h3>For Nvidia GPUs</h3>
@@ -211,25 +211,53 @@ services:
 <a href="https://github.com/NVIDIA/nvidia-container-toolkit" rel="nofollow noopener">Nvidia-Container-Toolkit</a>
 <p>We added the necessary environment variable that will utilize all the features available on a GPU on the host. Once Nvidia container runtime is installed on your host you will need to re/create the docker container with the nvidia container runtime `--runtime=nvidia` and add an environment variable `-e NVIDIA_VISIBLE_DEVICES=all` (can also be set to a specific gpu's UUID, this can be discovered by running `nvidia-smi --query-gpu=gpu_name,gpu_uuid --format=csv` ). NVIDIA automatically mounts the GPU and drivers from your host into the AgentDVR docker container.
 </p>
-<h3>For AMD GPUs & iGPUs</h3>
-<p>The following have to be added in docker-compose file/docker-cli cm respectively</p>
-<p><strong>docker compose</strong></p>
-<pre><code>devices:
-    - /dev/dri/renderD128:/dev/dri/renderD128
-    - /dev/dri/card0:/dev/dri/card0
-    - /dev/kfd:/dev/kfd</code></pre>
-<p><strong>docker cli</strong></p>
-<pre><code>--device /dev/dri/renderD128:/dev/dri/renderD128 --device /dev/dri:/dev/dri/card0 --device /dev/kfd:/dev/kfd</code></pre>
-<h3>For Intel GPUs & iGPUs</h3>
+<h3>For INTEL/AMD GPUs & iGPUs</h3>
 <p>The following have to be added in docker-compose file/docker-cli cm respectively</p>
 <p><strong>docker compose</strong></p>
 <pre><code>devices:
     - /dev/dri/renderD128:/dev/dri/renderD128
     - /dev/dri/card0:/dev/dri/card0</code></pre>
 <p><strong>docker cli</strong></p>
-<pre><code>--device /dev/dri/renderD128:/dev/dri/renderD128 --device /dev/dri/card0:/dev/dri/card0</code></pre>
-
+<pre><code>--device /dev/dri/renderD128:/dev/dri/renderD128 --device /dev/dri:/dev/dri/card0</code></pre>
 <h3>For Rockchip SBC's integrated VPU, use the CLI command below</h3>
+<h3>docker-compose (recommended, <a href="https://itnext.io/a-beginners-guide-to-deploying-a-docker-application-to-production-using-docker-compose-de1feccd2893" rel="nofollow noopener">click here for more info</a>) </h3>
+<pre><code>---
+services:
+  ispyagentdvr:
+    image: mekayelanik/ispyagentdvr:latest
+    container_name: ispyagentdvr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - AGENTDVR_WEBUI_PORT=8090
+      - TZ=Asia/Dhaka
+    devices:
+      - /dev/dri
+      - /dev/dma_heap
+      - /dev/mali0
+      - /dev/rga
+      - /dev/mpp_service
+      - /dev/iep
+      - /dev/mpp-service
+      - /dev/vpu_service
+      - /dev/vpu-service
+      - /dev/hevc_service
+      - /dev/hevc-service
+      - /dev/rkvdec
+      - /dev/rkvenc
+      - /dev/vepu
+      - /dev/h265e
+    volumes:
+      - /path/to/config:/home/agentdvr/AgentDVR/Media/XML
+      - /path/to/recordings:/home/agentdvr/AgentDVR/Media/WebServerRoot/Media
+      - /path/to/commands:/home/agentdvr/AgentDVR/Commands
+    ports:
+      - "8090:8090"
+      - "3478:3478/udp"
+      - "50000-50100:50000-50100/udp"
+    restart: unless-stopped
+</code></pre>
+<h3>docker cli ( <a href="https://docs.docker.com/engine/reference/commandline/cli/" rel="nofollow noopener">click here for more info</a>) </h3>
 <pre><code>docker run -d \
   --name=ispyagentdvr \
   -e PUID=1000 \
@@ -239,9 +267,9 @@ services:
   -p 8090:8090 \
   -p 3478:3478/udp \
   -p 50000-50100:50000-50100/udp \
-  -v /path/to/config:/AgentDVR/Media/XML \
-  -v /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media \
-  -v /path/to/commands:/AgentDVR/Commands \
+  -v /path/to/config:/home/agentdvr/AgentDVR/Media/XML \
+  -v /path/to/recordings:/home/agentdvr/AgentDVR/Media/WebServerRoot/Media \
+  -v /path/to/commands:/home/agentdvr/AgentDVR/Commands \
   --restart unless-stopped \
 `for dev in dri dma_heap mali0 rga mpp_service \
    iep mpp-service vpu_service vpu-service \
@@ -419,6 +447,8 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
 
 <p><strong> - Major Changes</strong></p>
 <ul>
+<li><strong>6.5.0.0:</strong> - ✅Regular version updated to 6.5.0.0. Updated Intel GPU driver to Comute Runtime Version: 25.22.33944.8, AMD Mesa Driver Version: 25.0.7-2. ⚠️⚠️⚠️Please Update your directory mappings!⚠️⚠️⚠️</li>
+<li><strong>6.3.4.0:</strong> - ⚠️⚠️⚠️ <b>Directory Structure has been changed. If you are a previous user of ispyagentdvr-docker, Please Update your directory mappings!</b> ⚠️⚠️⚠️</li>
 <li><strong>6.3.4.0:</strong> - ✅Regular version updated to 6.3.4.0. Updated Intel GPU driver to Comute Runtime Version: 25.18.33578.6, AMD Mesa Driver Version:  25.0.7-1 and updated jellyfin-ffmpeg to 7.1.1-6</li>
 <li><strong>6.1.3.0:</strong> - ✅Regular version updated to 6.1.3.0. Using BETA images in a mission-critical environment is STRICTLY DISCOURAGED ⚠️</li>
 <li><strong>6.0.9.0:</strong> - ⚠️⚠️⚠️ Updated Intel GPU driver and updated jellyfin-ffmpeg to 7.0.2-9 ⚠️⚠️⚠️</li> 

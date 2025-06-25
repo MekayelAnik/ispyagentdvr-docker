@@ -2,7 +2,10 @@
 set -euo pipefail  # Exit on error, undefined variables, and pipe failures
 
 # Configuration
-AGENT_DIR="/home/agentdvr/AgentDVR"
+declare -r \
+AGENT_DIR="/home/agentdvr/AgentDVR" \
+SESSION_LOG="/home/agentdvr/AgentDVR/Media/sessionlog.txt"
+
 AGENT_UID=${AGENT_UID:-1000}
 AGENT_GID=${AGENT_GID:-1000}
 
@@ -112,12 +115,21 @@ case $(arch) in
         ;;
 esac
 
-echo "Downloading $binary"
+echo "Downloading $binary" from "$AGENTURL"
+HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$AGENTURL/$binary")
+
+if [[ "$HTTP_STATUS" == 2* ]]; then
+    echo "File Found Online! HTTP Status: $HTTP_STATUS"
+elif [[ "$HTTP_STATUS" == 404 ]]; then
+    echo "Error: File not found (404)"
+else
+    echo "Unexpected HTTP status: $HTTP_STATUS"
+fi
+
 if ! sudo -u agentdvr curl --show-error --location "$AGENTURL/$binary" -o "AgentDVR.zip"; then
     echo "$binary Download FAILED!!! Exiting..." 
     exit 1
 fi
-
 # Checksum verification if available
 if [ -f "$AGENT_DIR/build_data/checksum" ]; then
     echo "Verifying checksum..."
@@ -133,12 +145,8 @@ if ! sudo -u agentdvr unzip AgentDVR.zip; then
     exit 1
 else 
     echo "Unzipped AgentDVR.zip successfully!"
-    mv -vf /home/agentdvr/AgentDVR/Content/* /home/agentdvr/AgentDVR/ || { echo "Failed to move contents"; exit 1; }
 fi
 
-if ! chmod 0775 "$AGENT_DIR"; then
-    error_exit "Failed to set permissions for directory: $AGENT_DIR"
-fi
 ######################### FINAL SETUP #########################
 echo "Configuring final permissions and links"
 
@@ -156,12 +164,48 @@ for dir in /agent /AgentDVR; do
     chown agentdvr:agentdvr "$dir" || { echo "Failed to set permissions for $dir"; exit 1; }
 done
 
-sudo -u agentdvr ln -sfv "$AGENT_DIR/Media" /agent/ || { echo "Failed to create Media link"; exit 1; }
-sudo -u agentdvr ln -sfv "$AGENT_DIR/Commands" /agent/ || { echo "Failed to create Commands link"; exit 1; }
-sudo -u agentdvr ln -sfv "$AGENT_DIR/Media" /AgentDVR/ || { echo "Failed to create Media link"; exit 1; }
-sudo -u agentdvr ln -sfv "$AGENT_DIR/Commands" /AgentDVR/ || { echo "Failed to create Commands link"; exit 1; }
+if [ ! -d "$AGENT_DIR/Media" ]; then
+    echo "Creating directory: $AGENT_DIR/Media"
+    mkdir -p "$AGENT_DIR/Media" || { echo "Failed to create Media directory"; exit 1; }
+fi
+if [ ! -d "$AGENT_DIR/Commands" ]; then
+    echo "Creating directory: $AGENT_DIR/Commands"
+    mkdir -p "$AGENT_DIR/Commands" || { echo "Failed to create Commands directory"; exit 1; }
+fi
+if [ ! -d "$AGENT_DIR/sounds" ]; then
+    echo "Creating directory: $AGENT_DIR/sounds"
+    mkdir -p "$AGENT_DIR/sounds" || { echo "Failed to create sounds directory"; exit 1; }
+fi
+if [ ! -d "$AGENT_DIR/Masks" ]; then
+    echo "Creating directory: $AGENT_DIR/Masks"
+    mkdir -p "$AGENT_DIR/Masks" || { echo "Failed to create Masks directory"; exit 1; }
+fi
+
+if [ ! -f "$SESSION_LOG" ]; then
+    echo "Creating Session log: $SESSION_LOG"
+    touch "$SESSION_LOG" || { echo "Failed to session log"; exit 1; }
+fi
 
 # Create FirstRun file
 sudo -u agentdvr touch "$AGENT_DIR/FirstRun" || { echo "Failed to create FirstRun file"; exit 1; }
+
+if ! chmod 0775 -R "$AGENT_DIR"; then
+    error_exit "Failed to set permissions for directory: $AGENT_DIR"
+fi
+
+if ! chown agentdvr:agentdvr -R "$AGENT_DIR"; then
+    error_exit "Failed to change ownership for directory: $AGENT_DIR"
+fi
+
+sudo -u agentdvr ln -sfv "$AGENT_DIR/Media" /agent/ || { echo "Failed to create Media link"; exit 1; }
+sudo -u agentdvr ln -sfv "$AGENT_DIR/Commands" /agent/ || { echo "Failed to create Commands link"; exit 1; }
+sudo -u agentdvr ln -sfv "$AGENT_DIR/Masks" /agent/ || { echo "Failed to create Media link"; exit 1; }
+sudo -u agentdvr ln -sfv "$AGENT_DIR/sounds" /agent/ || { echo "Failed to create Commands link"; exit 1; }
+sudo -u agentdvr ln -sfv "$AGENT_DIR/Media" /AgentDVR/ || { echo "Failed to create Media link"; exit 1; }
+sudo -u agentdvr ln -sfv "$AGENT_DIR/Commands" /AgentDVR/ || { echo "Failed to create Commands link"; exit 1; }
+sudo -u agentdvr ln -sfv "$AGENT_DIR/Masks" /AgentDVR/ || { echo "Failed to create Media link"; exit 1; }
+sudo -u agentdvr ln -sfv "$AGENT_DIR/sounds" /AgentDVR/ || { echo "Failed to create Commands link"; exit 1; }
+
+
 
 echo "Agent DVR setup completed successfully"
