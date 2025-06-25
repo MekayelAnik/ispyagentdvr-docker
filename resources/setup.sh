@@ -196,7 +196,7 @@ fi
 if ! chown agentdvr:agentdvr -R "$AGENT_DIR"; then
     error_exit "Failed to change ownership for directory: $AGENT_DIR"
 fi
-
+#####    Keeping emergency backward compatibility for directories    #####
 sudo -u agentdvr ln -sfv "$AGENT_DIR/Media" /agent/ || { echo "Failed to create Media link"; exit 1; }
 sudo -u agentdvr ln -sfv "$AGENT_DIR/Commands" /agent/ || { echo "Failed to create Commands link"; exit 1; }
 sudo -u agentdvr ln -sfv "$AGENT_DIR/Masks" /agent/ || { echo "Failed to create Media link"; exit 1; }
