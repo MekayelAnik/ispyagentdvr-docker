@@ -1,6 +1,7 @@
 #!/bin/bash
 # Standard colors mapped to 8-bit equivalents
 ORANGE='\033[38;5;208m'
+BLUE='\033[38;5;12m'
 ERROR_RED='\033[38;5;9m'
 LITE_GREEN='\033[38;5;10m'
 NAVY_BLUE='\033[38;5;18m'
@@ -104,17 +105,17 @@ print_system_info() {
     [[ "$disp_port" == '80' ]] && port_display=""
 
 printf "${GREEN} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Starting iSpy Agent DVR Surveillance System! <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< \n${NC}"
-printf "${NAVY_BLUE} Current AgentDVR Docker Image:${NC} ${GREEN}%s${NC}\n" "$tag"
+printf "${BLUE} Current AgentDVR Docker Image:${NC} ${GREEN}%s${NC}\n" "$tag"
 printf "${GREEN} If this Container is deployed on a Docker-Macvlan or Docker-IPvlan Network, then the IP Address of this AgentDVR container is: %s, Otherwise the AgentDVR IP is the IP of your HOST Server IP or localhost if you are accessing the WebUI from a Browser on the HOST Server.\n${NC}\n" "$container_ip"
 printf " AgentDVR WebUI can be accessed on PORT: ${GREEN}%s\n${NC}\n" "${disp_port:-80}"
 printf " Therefore Most Probable AgentDVR WebUI Address: ${GREEN}%s%s${NC} or ${GREEN}Your-HOST-Server-IP%s${NC} or ${GREEN}localhost%s${NC}\n" "$container_ip" "$port_display" "$port_display" "$port_display"
-printf "${NAVY_BLUE} iSpy Agent DVR is free to use locally for private use. You can add as many cameras as you like.${NC}\n"
-printf "${NAVY_BLUE} SSL secured web access, SMS, Twitter, email alerts, mobile device access, cloud uploads, Virtual Reality and other services that use iSpy Agent DVR online platform require a subscription or an annual payment.${NC}\n"
-printf "${NAVY_BLUE} If you desire to obtain a Subscription plan or want a Business License, please visit %s\n${NC}\n" "$PRICING_URL"
+printf "${BLUE} iSpy Agent DVR is free to use locally for private use. You can add as many cameras as you like.${NC}\n"
+printf "${BLUE} SSL secured web access, SMS, Twitter, email alerts, mobile device access, cloud uploads, Virtual Reality and other services that use iSpy Agent DVR online platform require a subscription or an annual payment.${NC}\n"
+printf "${BLUE} If you desire to obtain a Subscription plan or want a Business License, please visit %s\n${NC}\n" "$PRICING_URL"
     
     [[ -f "$BASE_TIMESTAMP" ]] && BASE_TIMESTAMP=$(cat "$BASE_TIMESTAMP") && printf "${TANGERINE}${BASE_TIMESTAMP}${NC}\n"
     [[ -f "$BUILD_TIMESTAMP" ]] && BUILD_TIMESTAMP=$(cat "$BUILD_TIMESTAMP") && printf "${ORANGE}${BUILD_TIMESTAMP}${NC}\n" 
-    printf "${NAVY_BLUE}This Container was started on:${NC} ${GREEN}$(date)${NC}\n"
+    printf "${BLUE}This Container was started on:${NC} ${GREEN}$(date)${NC}\n"
 }
 
 # Main execution
