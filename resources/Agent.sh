@@ -80,7 +80,12 @@ migrate_content_directories() {
         fi
 
         if ! rm -rf "$CONTENT_DIR"; then
-            error_exit "Failed to remove Content directory"
+            printf "${ERROR_RED}Failed to remove Content directory on first attempt.${NC}\n${LITE_GREEN}Trying Again...${NC}\n"
+            sleep 5
+            chattr -R -i "$CONTENT_DIR"  # Remove immutable flag
+            if ! rm -vrf "$CONTENT_DIR"; then
+                 printf "${ERROR_RED}Couldn't remove the Content directory.${NC}\n${ORANGE} Continuing anyways...${NC}\n"
+            fi
         fi
 
     if [[ -n "$PUID" && $PUID -ne 0 ]]; then
