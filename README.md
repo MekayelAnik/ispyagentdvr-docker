@@ -77,9 +77,9 @@
       <td>⚠️ LATEST BETA for "BETA TESTING". Backup config before trying!!! Discouraged to use on mission-critical environments!!! ⚠️</td>
     </tr>
     <tr>
-      <td align="center">6.5.9.0</td>
+      <td align="center">6.6.1.0</td>
       <td align="center">✅</td>
-      <td>"iSpy Agent DVR" Static version 6.5.9.0 image</td>
+      <td>"iSpy Agent DVR" Static version 6.6.1.0 image</td>
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
@@ -122,7 +122,7 @@ services:
   --name=ispyagentdvr \
   -e PUID=1000 \
   -e PGID=1000 \
-  -e AGENTDVR_WEBUI_PORT=8090
+  -e AGENTDVR_WEBUI_PORT=8090 \
   -e TZ=Asia/Dhaka \
   -p 8090:8090 \
   -p 3478:3478/udp \
