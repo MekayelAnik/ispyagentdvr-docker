@@ -36,7 +36,7 @@
 </table>
 <h2><b>Anouncements:</b></h2>
 <ul>
-<li>  ⚠️ ZSTD compression applied to reduce image size and save bandwidth. Docker Engine 20.10 or later is required for image version 6.5.7.0 and later! ⚠️</li>
+<li>  ⚠️ ZSTD compression applied to reduce image size and save bandwidth. Docker Engine 23.0 or later and for Podman deployment Podman Machine v5.1 or later is required for image version 6.5.7.0 and later! ⚠️</li>
 <li> FFMPEG version bumped from 7.0.2 to 7.1.1</li> 
 <li> DOTNET version bumped to 9.0</li>
 <li> Environment Variable <code>WEBUI_PORT</code> is now changed to <code>AGENTDVR_WEBUI_PORT</code>. Those who use Environment Variable to change the Port for Web UI, please use <code>AGENTDVR_WEBUI_PORT</code> from now on.</li>
@@ -415,7 +415,7 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
 
 <p><strong> - Major Changes</strong></p>
 <ul>
-<li><strong>6.5.7.0:</strong> - ⚠️⚠️⚠️ ZSTD compression applied to reduce image size and save bandwidth. Docker Engine 20.10 or later is required for image version 6.5.7.0 and later! ⚠️⚠️⚠️</li> 
+<li><strong>6.5.7.0:</strong> - ⚠️⚠️⚠️ ZSTD compression applied to reduce image size and save bandwidth. Docker Engine 23.0 or later and in case of Podman deployment, Podman Machine v5.1 or later is required for image version 6.5.7.0 and later! ⚠️⚠️⚠️</li> 
 <li><strong>6.3.4.0:</strong> - ✅Regular version updated to 6.3.4.0. Updated Intel GPU driver to Comute Runtime Version: 25.18.33578.6, AMD Mesa Driver Version:  25.0.7-1 and updated jellyfin-ffmpeg to 7.1.1-6</li>
 <li><strong>6.1.3.0:</strong> - ✅Regular version updated to 6.1.3.0. Using BETA images in a mission-critical environment is STRICTLY DISCOURAGED ⚠️</li>
 <li><strong>6.0.9.0:</strong> - ⚠️⚠️⚠️ Updated Intel GPU driver and updated jellyfin-ffmpeg to 7.0.2-9 ⚠️⚠️⚠️</li> 
