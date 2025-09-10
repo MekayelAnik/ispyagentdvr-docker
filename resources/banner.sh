@@ -13,10 +13,11 @@ ASH_GRAY='\033[38;5;250m'
 NC='\033[0m'
 script_dir=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
 # Constants
-CURRENT_PORT_FILE="/home/agentdvr/AgentDVR/Media/XML/current_port.txt"
-TAG_FILE="/home/agentdvr/AgentDVR/tag"
+CURRENT_PORT_FILE="/AgentDVR/Media/XML/current_port.txt"
+TAG_FILE="/AgentDVR/tag"
 BASE_TIMESTAMP="/usr/bin/share/base-image-timestamp"
-BUILD_TIMESTAMP="/home/agentdvr/AgentDVR/build-timestamp"
+BUILD_TIMESTAMP="/AgentDVR/build-timestamp"
+FFMPEG_VERSION_FILE="/usr/bin/share/ffmpeg_version"
 PRICING_URL="https://www.ispyconnect.com/pricing.aspx"
 
 # Function to print separator line
@@ -99,6 +100,7 @@ print_system_info() {
     
     local disp_port=$(<"$CURRENT_PORT_FILE")
     local tag=$(<"$TAG_FILE")
+    local ffmpeg_version=$(<"$FFMPEG_VERSION_FILE")
     local container_ip=$(hostname -I | awk '{print $1}')
     local port_display=":$disp_port"
     
@@ -106,13 +108,13 @@ print_system_info() {
 
 printf "${GREEN} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Starting iSpy Agent DVR Surveillance System! <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< \n${NC}"
 printf "${BLUE} Current AgentDVR Docker Image:${NC} ${GREEN}%s${NC}\n" "$tag"
+printf "${ORANGE} FFMPEG VERSION:${NC} ${ORANGE}%s${NC}\n" "$ffmpeg_version"
 printf "${GREEN} If this Container is deployed on a Docker-Macvlan or Docker-IPvlan Network, then the IP Address of this AgentDVR container is: %s, Otherwise the AgentDVR IP is the IP of your HOST Server IP or localhost if you are accessing the WebUI from a Browser on the HOST Server.\n${NC}\n" "$container_ip"
 printf " AgentDVR WebUI can be accessed on PORT: ${GREEN}%s\n${NC}\n" "${disp_port:-80}"
 printf " Therefore Most Probable AgentDVR WebUI Address: ${GREEN}%s%s${NC} or ${GREEN}Your-HOST-Server-IP%s${NC} or ${GREEN}localhost%s${NC}\n" "$container_ip" "$port_display" "$port_display" "$port_display"
 printf "${BLUE} iSpy Agent DVR is free to use locally for private use. You can add as many cameras as you like.${NC}\n"
 printf "${BLUE} SSL secured web access, SMS, Twitter, email alerts, mobile device access, cloud uploads, Virtual Reality and other services that use iSpy Agent DVR online platform require a subscription or an annual payment.${NC}\n"
 printf "${BLUE} If you desire to obtain a Subscription plan or want a Business License, please visit %s\n${NC}\n" "$PRICING_URL"
-    
     [[ -f "$BASE_TIMESTAMP" ]] && BASE_TIMESTAMP=$(cat "$BASE_TIMESTAMP") && printf "${TANGERINE}${BASE_TIMESTAMP}${NC}\n"
     [[ -f "$BUILD_TIMESTAMP" ]] && BUILD_TIMESTAMP=$(cat "$BUILD_TIMESTAMP") && printf "${ORANGE}${BUILD_TIMESTAMP}${NC}\n" 
     printf "${BLUE}This Container was started on:${NC} ${GREEN}$(date)${NC}\n"
