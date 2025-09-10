@@ -32,23 +32,23 @@ run_banner() {
 
 # Constants and paths
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
-AGENT_DIR="/home/agentdvr/AgentDVR"
+AGENT_DIR="/AgentDVR"
 REQUIRED_DIRS=(
-    "/home/agentdvr/AgentDVR/Media/XML"
-    "/home/agentdvr/AgentDVR/Media/WebServerRoot/Media"
-    "/home/agentdvr/AgentDVR/Commands"
-    "/home/agentdvr/AgentDVR/Masks"
-    "/home/agentdvr/AgentDVR/sounds"
+    "/AgentDVR/Media/XML"
+    "/AgentDVR/Media/WebServerRoot/Media"
+    "/AgentDVR/Commands"
+    "/AgentDVR/Masks"
+    "/AgentDVR/sounds"
 )
 BANNER_FILE="$script_dir/banner.sh"
-AGENT_BINARY="/home/agentdvr/AgentDVR/Agent"
-CONFIG_DIR="/home/agentdvr/AgentDVR/Media/XML"
-COMMANDS_DIR="/home/agentdvr/AgentDVR/Commands"
-SOUNDS_DIR="/home/agentdvr/AgentDVR/sounds"
-MASKS_DIR="/home/agentdvr/AgentDVR/Masks"
-FIRST_RUN="/home/agentdvr/AgentDVR/FirstRun"
-CONTENT_DIR="/home/agentdvr/AgentDVR/Content"
-SESSION_LOG="/home/agentdvr/AgentDVR/Media/sessionlog.txt"
+AGENT_BINARY="/AgentDVR/Agent"
+CONFIG_DIR="/AgentDVR/Media/XML"
+COMMANDS_DIR="/AgentDVR/Commands"
+SOUNDS_DIR="/AgentDVR/sounds"
+MASKS_DIR="/AgentDVR/Masks"
+FIRST_RUN="/AgentDVR/FirstRun"
+CONTENT_DIR="/AgentDVR/Content"
+SESSION_LOG="/AgentDVR/Media/sessionlog.txt"
 
 # Error handling function
 error_exit() {
@@ -125,8 +125,8 @@ ensure_directories() {
     migrate_content_directories
 
     # Fix home directory permissions if running as root
-    if [[ $(id -u) -eq 0 ]] && [[ -d "/home/agentdvr" ]]; then
-        chmod 0775 "/home/agentdvr" || error_exit "Failed to set /home/agentdvr permissions"
+    if [[ $(id -u) -eq 0 ]] && [[ -d "/AgentDVR/" ]]; then
+        chmod 0775 "/AgentDVR/" || error_exit "Failed to set /AgentDVR/ permissions"
     fi
 
     # Handle all declared directories
