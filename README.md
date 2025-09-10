@@ -36,14 +36,11 @@
 </table>
 <h2><b>Anouncements:</b></h2>
 <ul>
-<li>  ⚠️⚠️⚠️ Directory structure reverted to <code>/AgentDVR</code> from <code>/home/agentdvr/AgentDVR</code>. It is <b>SPECIALLY IMPORTANT</b> to correctly apply this change in unRAID, Synology NAS and other GUID based container deployer. ⚠️⚠️⚠️</li>
-<li>  ⚠️ Base image updated to <b>Debian Trixie</b> ⚠️</li>
 <li>  ⚠️ ZSTD compression applied to reduce image size and save bandwidth. Docker Engine 20.10 or later is required for image version 6.5.7.0 and later! ⚠️</li>
-<li> ⚠️⚠️⚠️ <b>VERY IMPORTANT:</b> TURN Server Port range is changed from <code>50000-50010</code> to <code>50000-50100</code>. Please set the range in Docker CLI or Docker Compose to <code>50000-50100⚠️⚠️⚠️</code></li>
-<li> Alhamdulillah, The <strong>ARMHF</strong> image has been fixed. Special Thanks To <strong> Sean T</strong> for fixing the underlying issues. For <strong>ARM32-bit/ARMHF</strong> devices, please download an image version greater than or equal to <strong>4.8.2.0</strong>.</li>
-<li> For GPU HW-Accelerated Encode/Decode please use version <strong>5.3.5.0 or NEWER</strong> images.</li>
-<li> ⚠️⚠️⚠️ It is <b>Discouraged</b> to use BETA on mission-critical environments!!! </li>
-<li> This image provides various versions that are available via tags. Please read the <a href="https://www.ispyconnect.com/producthistory.aspx?productid=27" rel="nofollow noopener">update information</a> carefully and exercise caution when using "older versions" tags as they tend to contain unfixed bugs. </li>
+<li> FFMPEG version bumped from 7.0.2 to 7.1.1</li> 
+<li> DOTNET version bumped to 9.0</li>
+<li> Environment Variable <code>WEBUI_PORT</code> is now changed to <code>AGENTDVR_WEBUI_PORT</code>. Those who use Environment Variable to change the Port for Web UI, please use <code>AGENTDVR_WEBUI_PORT</code> from now on.</li>
+<li> TURN Server Port range is changed from <code>50000-50010</code> to <code>50000-50100</code>. Please set the range in Docker CLI or Docker Compose to <code>50000-50100</code></li>
 </ul>
 
 <table>
@@ -75,9 +72,9 @@
       <td>⚠️ LATEST BETA for "BETA TESTING". Backup config before trying!!! Discouraged to use on mission-critical environments!!! ⚠️</td>
     </tr>
     <tr>
-      <td align="center">6.6.5.0</td>
+      <td align="center">6.5.9.0</td>
       <td align="center">✅</td>
-      <td>"iSpy Agent DVR" Static version 6.6.5.0 image</td>
+      <td>"iSpy Agent DVR" Static version 6.5.9.0 image</td>
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
@@ -120,7 +117,7 @@ services:
   --name=ispyagentdvr \
   -e PUID=1000 \
   -e PGID=1000 \
-  -e AGENTDVR_WEBUI_PORT=8090
+  -e AGENTDVR_WEBUI_PORT=8090 \
   -e TZ=Asia/Dhaka \
   -p 8090:8090 \
   -p 3478:3478/udp \
@@ -418,13 +415,9 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
 
 <p><strong> - Major Changes</strong></p>
 <ul>
-<li><strong>6.6.2.0:</strong> - ⚠️⚠️⚠️ Directory structure reverted to <code>/AgentDVR</code> from <code>/home/agentdvr/AgentDVR</code>. It is <b>SPECIALLY IMPORTANT</b> to correctly apply this change in unRAID, Synology NAS and other GUID based container deployer. ⚠️⚠️⚠️</li> 
-<li><strong>6.6.2.0:</strong> - ⚠️⚠️⚠️ Base image changed to <b>Debian Trixie</b> from Bookworm (mekayelanik:ispyagentdvr-trixie-slim-vlc-jellyfin-ffmpeg-7.1.1-7-intel-25.31.34666.3) ⚠️⚠️⚠️</li>
-<li><strong>6.6.2.0:</strong> - ✅ UPDATED: Intel driver Version to: 25.31.34666.3 and AMD Mesa Driver Version to: 25.2.2-1</li>
-<li><strong>6.6.2.0:</strong> - ⚠️⚠️⚠️ Armhf will not get any Jellyfin FFMEG from now on as the suppoprt has been dropped by Jellyfin. Instead, FFMEG from Debian SID will be used for ARMHF builds. ⚠️⚠️⚠️</li>
 <li><strong>6.5.7.0:</strong> - ⚠️⚠️⚠️ ZSTD compression applied to reduce image size and save bandwidth. Docker Engine 20.10 or later is required for image version 6.5.7.0 and later! ⚠️⚠️⚠️</li> 
-<li><strong>6.3.4.0:</strong> - ✅ Regular version updated to 6.3.4.0. Updated Intel GPU driver to Comute Runtime Version: 25.18.33578.6, AMD Mesa Driver Version: 25.0.7-1 and updated jellyfin-ffmpeg to 7.1.1-6</li>
-<li><strong>6.1.3.0:</strong> - ✅ Regular version updated to 6.1.3.0. Using BETA images in a mission-critical environment is STRICTLY DISCOURAGED ⚠️</li>
+<li><strong>6.3.4.0:</strong> - ✅Regular version updated to 6.3.4.0. Updated Intel GPU driver to Comute Runtime Version: 25.18.33578.6, AMD Mesa Driver Version:  25.0.7-1 and updated jellyfin-ffmpeg to 7.1.1-6</li>
+<li><strong>6.1.3.0:</strong> - ✅Regular version updated to 6.1.3.0. Using BETA images in a mission-critical environment is STRICTLY DISCOURAGED ⚠️</li>
 <li><strong>6.0.9.0:</strong> - ⚠️⚠️⚠️ Updated Intel GPU driver and updated jellyfin-ffmpeg to 7.0.2-9 ⚠️⚠️⚠️</li> 
 <li><strong>6.0.1.0:</strong> - ⚠️⚠️⚠️ Added driver support for Intel Battlemage GPUs ⚠️⚠️⚠️</li> 
 <li><strong>5.8.4.0:</strong> - ⚠️⚠️⚠️ Config files file format changed from XML to JSON ⚠️⚠️⚠️</li> 
