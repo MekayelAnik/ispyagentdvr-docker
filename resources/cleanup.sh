@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Configuration
-AGENTDVR_DIR="/home/agentdvr/AgentDVR"
+AGENTDVR_DIR="/AgentDVR/"
 FILES_TO_REMOVE=(
     "setup.sh"
     "agent-register.sh"

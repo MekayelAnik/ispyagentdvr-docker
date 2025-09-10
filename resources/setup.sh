@@ -1,10 +1,10 @@
 #!/bin/bash
-set -euo pipefail  # Exit on error, undefined variables, and pipe failures
+set -ex  # Exit on error, undefined variables, and pipe failures
 
 # Configuration
 declare -r \
-AGENT_DIR="/home/agentdvr/AgentDVR" \
-SESSION_LOG="/home/agentdvr/AgentDVR/Media/sessionlog.txt"
+AGENT_DIR="/AgentDVR" \
+SESSION_LOG="/AgentDVR/Media/sessionlog.txt"
 
 AGENT_UID=${AGENT_UID:-1000}
 AGENT_GID=${AGENT_GID:-1000}
@@ -57,8 +57,8 @@ fi
 
 # Create agentdvr user if it doesn't exist
 if ! id -u agentdvr >/dev/null 2>&1; then
-    adduser --gecos '' --disabled-password --no-create-home \
-            --uid "$AGENT_UID" --ingroup agentdvr --shell /bin/false agentdvr \
+    adduser --gecos '' --disabled-password -d "$AGENT_DIR" \
+            --uid "$AGENT_UID" --ingroup agentdvr --shell /bin/false -m agentdvr \
             || { echo "Failed to create user"; exit 1; }
 fi
 
@@ -155,7 +155,7 @@ sudo -u agentdvr chmod +x ./Agent || { echo "Failed to set execute permissions";
 sudo -u agentdvr find . -name "*.sh" -exec chmod +x {} \; || { echo "Failed to set script permissions"; exit 1; }
 
 # Create and link directories
-for dir in /agent /AgentDVR; do
+for dir in /agent /AgentDVR /home/agentdvr/AgentDVR/; do
     if [ -e "$dir" ] && [ ! -d "$dir" ]; then
         echo "Error: $dir exists but is not a directory"
         exit 1
@@ -201,10 +201,10 @@ sudo -u agentdvr ln -sfv "$AGENT_DIR/Media" /agent/ || { echo "Failed to create 
 sudo -u agentdvr ln -sfv "$AGENT_DIR/Commands" /agent/ || { echo "Failed to create Commands link"; exit 1; }
 sudo -u agentdvr ln -sfv "$AGENT_DIR/Masks" /agent/ || { echo "Failed to create Media link"; exit 1; }
 sudo -u agentdvr ln -sfv "$AGENT_DIR/sounds" /agent/ || { echo "Failed to create Commands link"; exit 1; }
-sudo -u agentdvr ln -sfv "$AGENT_DIR/Media" /AgentDVR/ || { echo "Failed to create Media link"; exit 1; }
-sudo -u agentdvr ln -sfv "$AGENT_DIR/Commands" /AgentDVR/ || { echo "Failed to create Commands link"; exit 1; }
-sudo -u agentdvr ln -sfv "$AGENT_DIR/Masks" /AgentDVR/ || { echo "Failed to create Media link"; exit 1; }
-sudo -u agentdvr ln -sfv "$AGENT_DIR/sounds" /AgentDVR/ || { echo "Failed to create Commands link"; exit 1; }
+sudo -u agentdvr ln -sfv "$AGENT_DIR/Media" /home/agentdvr/AgentDVR/ || { echo "Failed to create Media link"; exit 1; }
+sudo -u agentdvr ln -sfv "$AGENT_DIR/Commands" /home/agentdvr/AgentDVR/ || { echo "Failed to create Commands link"; exit 1; }
+sudo -u agentdvr ln -sfv "$AGENT_DIR/Masks" /home/agentdvr/AgentDVR/ || { echo "Failed to create Media link"; exit 1; }
+sudo -u agentdvr ln -sfv "$AGENT_DIR/sounds" /home/agentdvr/AgentDVR/ || { echo "Failed to create Commands link"; exit 1; }
 
 
 

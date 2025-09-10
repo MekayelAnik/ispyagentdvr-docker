@@ -34,20 +34,18 @@
     </tr>
   </tbody>
 </table>
-<h2>Anouncements:</h2>
-<p> - <b>PLEASE NOTE: Regular latest version (6.3.4.0) has been released! ⚠️⚠️⚠️ Discouraged to use BETA on mission-critical environments!!! </b></p>
- - <b>The following possible BREAKING CHANGES will be present in every future deployment</b></p>
+<h2><b>Anouncements:</b></h2>
 <ul>
+<li>  ⚠️⚠️⚠️ Directory structure reverted to <code>/AgentDVR</code> from <code>/home/agentdvr/AgentDVR</code>. It is <b>SPECIALLY IMPORTANT</b> to correctly apply this change in unRAID, Synology NAS and other GUID based container deployer. ⚠️⚠️⚠️</li>
+<li>  ⚠️ Base image updated to <b>Debian Trixie</b> ⚠️</li>
 <li>  ⚠️ ZSTD compression applied to reduce image size and save bandwidth. Docker Engine 20.10 or later is required for image version 6.5.7.0 and later! ⚠️</li>
-<li> FFMPEG version bumped from 7.0.2 to 7.1.1</li> 
-<li> DOTNET version bumped to 9.0</li>
-<li> Environment Variable <code>WEBUI_PORT</code> is now changed to <code>AGENTDVR_WEBUI_PORT</code>. Those who use Environment Variable to change the Port for Web UI, please use <code>AGENTDVR_WEBUI_PORT</code> from now on.</li>
-<li> TURN Server Port range is changed from <code>50000-50010</code> to <code>50000-50100</code>. Please set the range in Docker CLI or Docker Compose to <code>50000-50100</code></li>
+<li> ⚠️⚠️⚠️ <b>VERY IMPORTANT:</b> TURN Server Port range is changed from <code>50000-50010</code> to <code>50000-50100</code>. Please set the range in Docker CLI or Docker Compose to <code>50000-50100⚠️⚠️⚠️</code></li>
+<li> Alhamdulillah, The <strong>ARMHF</strong> image has been fixed. Special Thanks To <strong> Sean T</strong> for fixing the underlying issues. For <strong>ARM32-bit/ARMHF</strong> devices, please download an image version greater than or equal to <strong>4.8.2.0</strong>.</li>
+<li> For GPU HW-Accelerated Encode/Decode please use version <strong>5.3.5.0 or NEWER</strong> images.</li>
+<li> ⚠️⚠️⚠️ It is <b>Discouraged</b> to use BETA on mission-critical environments!!! </li>
+<li> This image provides various versions that are available via tags. Please read the <a href="https://www.ispyconnect.com/producthistory.aspx?productid=27" rel="nofollow noopener">update information</a> carefully and exercise caution when using "older versions" tags as they tend to contain unfixed bugs. </li>
 </ul>
-<p> - <b>The Following images: <code>gpu-hwaccel-latest</code>,<code>vlc-hwaccel-latest</code> & <code>vlc-support-latest</code> will be taken down on 1st August 2024. Some images were re-uploaded. The Versions that have been re-uploaded are from 5.3.5.0 to the 5.6.0.0 AgentDVR versions. Only the Default tags were re-uploaded & do incorporate all the features combined that were available on the previously maintained 4 types of images in themselves. Sorry for the inconvenience!</b>This has been done for Rapid Bug detection, complexity reduction, and ease of maintenance </p>
-<p> - Alhamdulillah, The <strong>ARMHF</strong> image has been fixed. Special Thanks To <strong> Sean T</strong> for fixing the underlying issues. For <strong>ARM32-bit/ARMHF</strong> devices, please download an image version greater than or equal to <strong>4.8.2.0</strong>.</p>
-<p> - For GPU HW-Accelerated Encode/Decode please use version <strong>5.3.5.0 or NEWER</strong> images</p>
-<h3>This image provides various versions that are available via tags. Please read the <a href="https://www.ispyconnect.com/producthistory.aspx?productid=27" rel="nofollow noopener">update information</a> carefully and exercise caution when using "older versions" tags as they tend to contain unfixed bugs. </h3>
+
 <table>
   <thead>
     <tr>
@@ -77,9 +75,9 @@
       <td>⚠️ LATEST BETA for "BETA TESTING". Backup config before trying!!! Discouraged to use on mission-critical environments!!! ⚠️</td>
     </tr>
     <tr>
-      <td align="center">6.5.9.0</td>
+      <td align="center">6.6.5.0</td>
       <td align="center">✅</td>
-      <td>"iSpy Agent DVR" Static version 6.5.9.0 image</td>
+      <td>"iSpy Agent DVR" Static version 6.6.5.0 image</td>
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
@@ -420,29 +418,24 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
 
 <p><strong> - Major Changes</strong></p>
 <ul>
+<li><strong>6.6.2.0:</strong> - ⚠️⚠️⚠️ Directory structure reverted to <code>/AgentDVR</code> from <code>/home/agentdvr/AgentDVR</code>. It is <b>SPECIALLY IMPORTANT</b> to correctly apply this change in unRAID, Synology NAS and other GUID based container deployer. ⚠️⚠️⚠️</li> 
+<li><strong>6.6.2.0:</strong> - ⚠️⚠️⚠️ Base image changed to <b>Debian Trixie</b> from Bookworm (mekayelanik:ispyagentdvr-trixie-slim-vlc-jellyfin-ffmpeg-7.1.1-7-intel-25.31.34666.3) ⚠️⚠️⚠️</li>
+<li><strong>6.6.2.0:</strong> - ✅ UPDATED: Intel driver Version to: 25.31.34666.3 and AMD Mesa Driver Version to: 25.2.2-1</li>
+<li><strong>6.6.2.0:</strong> - ⚠️⚠️⚠️ Armhf will not get any Jellyfin FFMEG from now on as the suppoprt has been dropped by Jellyfin. Instead, FFMEG from Debian SID will be used for ARMHF builds. ⚠️⚠️⚠️</li>
 <li><strong>6.5.7.0:</strong> - ⚠️⚠️⚠️ ZSTD compression applied to reduce image size and save bandwidth. Docker Engine 20.10 or later is required for image version 6.5.7.0 and later! ⚠️⚠️⚠️</li> 
-<li><strong>6.3.4.0:</strong> - ✅Regular version updated to 6.3.4.0. Updated Intel GPU driver to Comute Runtime Version: 25.18.33578.6, AMD Mesa Driver Version:  25.0.7-1 and updated jellyfin-ffmpeg to 7.1.1-6</li>
-<li><strong>6.1.3.0:</strong> - ✅Regular version updated to 6.1.3.0. Using BETA images in a mission-critical environment is STRICTLY DISCOURAGED ⚠️</li>
+<li><strong>6.3.4.0:</strong> - ✅ Regular version updated to 6.3.4.0. Updated Intel GPU driver to Comute Runtime Version: 25.18.33578.6, AMD Mesa Driver Version: 25.0.7-1 and updated jellyfin-ffmpeg to 7.1.1-6</li>
+<li><strong>6.1.3.0:</strong> - ✅ Regular version updated to 6.1.3.0. Using BETA images in a mission-critical environment is STRICTLY DISCOURAGED ⚠️</li>
 <li><strong>6.0.9.0:</strong> - ⚠️⚠️⚠️ Updated Intel GPU driver and updated jellyfin-ffmpeg to 7.0.2-9 ⚠️⚠️⚠️</li> 
 <li><strong>6.0.1.0:</strong> - ⚠️⚠️⚠️ Added driver support for Intel Battlemage GPUs ⚠️⚠️⚠️</li> 
 <li><strong>5.8.4.0:</strong> - ⚠️⚠️⚠️ Config files file format changed from XML to JSON ⚠️⚠️⚠️</li> 
 <li><strong>5.8.1.0:</strong> - ⚠️ FFMPEG version bumped from 6.0.1 to 7.0.2</li> 
-<li><strong>5.8.1.0:</strong> - ⚠️ DOTNET version bumped to 9.0</li>
-<li><strong>5.8.1.0:</strong> - ⚠️⚠️⚠️ Environment Variable <code>WEBUI_PORT</code> is now changed to <code>AGENTDVR_WEBUI_PORT</code>. Those who use Environment Variable to change the Port for Web UI, please use <code>AGENTDVR_WEBUI_PORT</code> from now on.</li>
-<li><strong>5.8.1.0:</strong> - <code>mekayelank/ispyagentdvr</code> image is now fully backword compatible with <code>doitandbedone/ispyagentdvr</code> image. From now on, you don't have to change the directory mapping to switch from <code>doitandbedone/ispyagentdvr</code> to <code>mekayelank/ispyagentdvr</code></li>
-<li><strong>5.8.1.0:</strong> - ⚠️⚠️⚠️ TURN Server Port range changed from <code>50000-50010</code> to <code>50000-50100</code>. Please set the range in Docker CLI or Docker Compose to <code>50000-50100</code></li>
-<li><strong>5.3.5.0:</strong> - Fixed HW-Accelerated Encode/Decode for AMD, Nvidia & Intel GPUs (From v5.3.5.0 GPU Accelerated Encode/Decode is Tested WORKING in x86_64 but improvements may be needed. Please submit issues in GitHub, if one faces any.)</li> 
-<li><strong>5.2.8.0 :</strong> - (BETA) Added HW-Acceleration for Nvidia, AMD & Intel GPUs & iGPUs (in x86_64). Also added HW-Acceleration for Raspberry Pi 4 and beyond. Related configs may need to be added to the /boot/config.txt</li> 
-<li><strong>4.8.2.0:</strong> - Fixed ARMHF dependency issues and other improvements.</li> 
-<li><strong>4.8.0.0:</strong> - ⚠️ Major Bug fixes with ONVIF fix</li> 
-<li><strong>4.7.4.0:</strong> <ul> <li> Fixed bump FFmpeg 6 version that was crashing on missing GPU drivers</li>  <li> Add TURN server option to local server settings.</li></ul>
-</li>
-<li><strong>4.7.3.0:</strong> - ⚠️ Bumped FFmpeg version from 5 to 6.</li>
-<li><strong>4.1.2.0:</strong> - Initial Release.</li>
+<li><strong>5.8.1.0:</strong> - <code>mekayelank/ispyagentdvr</code> image is now fully backword compatible with <code>doitandbedone/ispyagentdvr</code> image. From now on, you don't have to change the directory mapping to switch from <code>doitandbedone/ispyagentdvr</code> to <code>mekayelank/ispyagentdvr</code>, <b>UNLESS you are using unRAID/Synology NAS or other GUI based container deployer. In that case, you will have to follow the contents of the documentation to deploy this image</b></li>
 </ul>
 
 <h2>Issues & Requests</h2>
 <p> To submit this Docker image specific issues or requests visit this docker image's Github Link: <a href="https://www.github.com/MekayelAnik/ispyagentdvr-docker" rel="nofollow noopener">https://www.github.com/MekayelAnik/ispyagentdvr-docker</a>
 </p>
 <p> For iSpy AgentDVR-related issues and requests, please visit: <a href="https://www.reddit.com/r/ispyconnect/" rel="nofollow noopener">https://www.reddit.com/r/ispyconnect/</a>
+</p>
+<p> To have a deeper dive into the custom base image of this container, please visit: <a href="https://github.com/MekayelAnik/ispyagentdvr-base-image" rel="nofollow noopener">https://github.com/MekayelAnik/ispyagentdvr-base-image</a>
 </p>
