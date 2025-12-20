@@ -33,14 +33,12 @@ TEMP_FILE=$(mktemp "${DOCKERFILE_NAME}.XXXXXX") || {
     if [ ! -e ./resources/build_data/publication ]; then
         cat << 'EOF'
 # Install sudo if not present and clean up
-RUN apt-get update && \
-    if ! command -v sudo >/dev/null 2>&1; then \
-        echo "sudo is not installed. Installing sudo..." && \
-        apt-get update && \
-        apt-get install -y sudo; \
-    fi && \
+RUN echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99ignore-release-date && \
+    apt-get update && \
+    (dpkg -l sudo 2>/dev/null | grep -q '^ii' || \
+    (echo "sudo is not installed. Installing sudo..." && apt-get install -y sudo)) && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/99ignore-release-date
 
 # Create agentdvr user and set up permissions
 RUN useradd -m -d /AgentDVR/ -s /bin/bash -u 1000 agentdvr && \
@@ -96,6 +94,9 @@ EXPOSE 3478/udp 3478/tcp
 
 # TURN server UDP port range
 EXPOSE 50000-50100/udp
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
+  CMD curl -f http://localhost:${AGENTDVR_WEBUI_PORT:-8090}/ || exit 1
 
 # Define service entrypoint
 CMD ["/AgentDVR/Agent.sh"]
