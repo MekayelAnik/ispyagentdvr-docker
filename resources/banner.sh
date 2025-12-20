@@ -1,16 +1,32 @@
 #!/bin/bash
 # Standard colors mapped to 8-bit equivalents
-ORANGE='\033[38;5;208m'
-BLUE='\033[38;5;12m'
-ERROR_RED='\033[38;5;9m'
-LITE_GREEN='\033[38;5;10m'
-NAVY_BLUE='\033[38;5;18m'
-TANGERINE='\033[38;5;208m'  
-GREEN='\033[38;5;2m'
-SEA_GREEN='\033[38;5;74m'
-FOREST_GREEN='\033[38;5;34m'
-ASH_GRAY='\033[38;5;250m'
-NC='\033[0m'
+# Disable ANSI color codes for log aggregators (Graylog, ELK, etc.)
+# Set DISABLE_COLOR_LOGGING=true or NO_COLOR=1 to disable colors
+if [[ -n "${DISABLE_COLOR_LOGGING:-}" ]] || [[ -n "${NO_COLOR:-}" ]]; then
+    ORANGE=''
+    BLUE=''
+    ERROR_RED=''
+    LITE_GREEN=''
+    NAVY_BLUE=''
+    TANGERINE=''
+    GREEN=''
+    SEA_GREEN=''
+    FOREST_GREEN=''
+    ASH_GRAY=''
+    NC=''
+else
+    ORANGE='\033[38;5;208m'
+    BLUE='\033[38;5;12m'
+    ERROR_RED='\033[38;5;9m'
+    LITE_GREEN='\033[38;5;10m'
+    NAVY_BLUE='\033[38;5;18m'
+    TANGERINE='\033[38;5;208m'
+    GREEN='\033[38;5;2m'
+    SEA_GREEN='\033[38;5;74m'
+    FOREST_GREEN='\033[38;5;34m'
+    ASH_GRAY='\033[38;5;250m'
+    NC='\033[0m'
+fi
 script_dir=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
 # Constants
 CURRENT_PORT_FILE="/AgentDVR/Media/XML/current_port.txt"
@@ -124,7 +140,10 @@ printf "${BLUE} If you desire to obtain a Subscription plan or want a Business L
 main() {
     print_separator
     print_ascii_art
-    print_colored_banner
+    # Skip the fancy RGB colored banner when colors are disabled (contains inline ANSI codes)
+    if [[ -z "${DISABLE_COLOR_LOGGING:-}" ]] && [[ -z "${NO_COLOR:-}" ]]; then
+        print_colored_banner
+    fi
     print_agent_info
     print_system_info
 }

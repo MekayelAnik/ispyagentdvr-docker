@@ -1,14 +1,28 @@
 #!/bin/bash
 # Standard colors mapped to 8-bit equivalents
-ORANGE='\033[38;5;208m'
-ERROR_RED='\033[38;5;9m'
-LITE_GREEN='\033[38;5;10m'
-NAVY_BLUE='\033[38;5;18m'
-GREEN='\033[38;5;2m'
-SEA_GREEN='\033[38;5;74m'
-ASH_GRAY='\033[38;5;250m'
-BLUE='\033[38;5;12m'
-NC='\033[0m'
+# Disable ANSI color codes for log aggregators (Graylog, ELK, etc.)
+# Set DISABLE_COLOR_LOGGING=true or NO_COLOR=1 to disable colors
+if [[ -n "${DISABLE_COLOR_LOGGING:-}" ]] || [[ -n "${NO_COLOR:-}" ]]; then
+    ORANGE=''
+    ERROR_RED=''
+    LITE_GREEN=''
+    NAVY_BLUE=''
+    GREEN=''
+    SEA_GREEN=''
+    ASH_GRAY=''
+    BLUE=''
+    NC=''
+else
+    ORANGE='\033[38;5;208m'
+    ERROR_RED='\033[38;5;9m'
+    LITE_GREEN='\033[38;5;10m'
+    NAVY_BLUE='\033[38;5;18m'
+    GREEN='\033[38;5;2m'
+    SEA_GREEN='\033[38;5;74m'
+    ASH_GRAY='\033[38;5;250m'
+    BLUE='\033[38;5;12m'
+    NC='\033[0m'
+fi
 
 # Initialize banner execution flag
 __BANNER_EXECUTED=0
@@ -327,7 +341,7 @@ main() {
     case "${DEBUG_MODE,,}" in
         yes|ye|y|true|t)
             # Run banner immediately at script start
-            if [[ -n "$CUSTOM_ENTRYPOINT" && -x "$CUSTOM_ENTRYPOINT" ]]; then
+            if [[ -n "${CUSTOM_ENTRYPOINT:-}" && -x "${CUSTOM_ENTRYPOINT:-}" ]]; then
                 chmod +x "$CUSTOM_ENTRYPOINT" || error_exit "Failed to set execute permissions for custom entrypoint"
                 printf "${ORANGE}Running custom entrypoint: %s${NC}\n" "$CUSTOM_ENTRYPOINT"
                 printf "${ERROR_RED}Debug mode enabled. Custom entrypoint will be executed.${NC}\n"
