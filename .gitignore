@@ -7,3 +7,4 @@ Dockerfile.ispyagentdvr
 /DockerfileModifier.sh
 /Dockerfile.ispyagentdvr-docker
 /Dockerfile
+*.zip
