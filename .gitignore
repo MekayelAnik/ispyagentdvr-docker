@@ -9,3 +9,5 @@ Dockerfile.ispyagentdvr
 /Dockerfile
 build.sh
 *.zip
+.vscode
+.claude
