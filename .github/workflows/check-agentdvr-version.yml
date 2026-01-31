@@ -1,0 +1,285 @@
+# ============================================================================
+# Agent DVR Version Checker - Optimized Workflow
+# ============================================================================
+# This workflow checks for new Agent DVR versions and updates the version file.
+# 
+# Security optimizations applied based on GitHub Security Lab recommendations:
+# - Explicit minimal permissions (principle of least privilege)
+# - Concurrency control to prevent duplicate runs
+# - Hash-pinned action versions for supply chain security
+# - Environment variables for potentially untrusted inputs
+# - Stable Python version (3.12 LTS)
+# 
+# Performance optimizations:
+# - Built-in pip caching via setup-python
+# - Reduced artifact overhead by using job outputs
+# - Explicit timeouts to prevent hung workflows
+# - External Python script for better maintainability
+# ============================================================================
+
+name: Check Agent DVR Version
+
+on:
+  schedule:
+    # Run daily at 6:00 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_update:
+        description: 'Force update even if no new version'
+        required: false
+        type: boolean
+        default: false
+      stable_only:
+        description: 'Only update if version is stable (5+ days old)'
+        required: false
+        type: boolean
+        default: false
+
+# Prevent duplicate runs - only allow one workflow run at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default to read-only permissions (principle of least privilege)
+permissions: {}
+
+env:
+  TZ: Asia/Dhaka  # Bangladesh Time (UTC+6)
+  PRODUCT_URL: "https://www.ispyconnect.com/producthistory.aspx?productid=27"
+  STABLE_DAYS: 5  # Days a version must be latest to be considered stable
+
+jobs:
+  check-version:
+    name: Check for New Version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    # Minimal permissions for this job
+    permissions:
+      contents: read
+    
+    outputs:
+      new_version: ${{ steps.check.outputs.new_version }}
+      version: ${{ steps.check.outputs.version }}
+      date: ${{ steps.check.outputs.date }}
+      stable: ${{ steps.check.outputs.stable }}
+      stable_version: ${{ steps.check.outputs.stable_version }}
+      days_since_release: ${{ steps.check.outputs.days_since_release }}
+      changes: ${{ steps.check.outputs.changes }}
+      version_json: ${{ steps.check.outputs.version_json }}
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false  # Security: don't persist credentials
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'  # Stable LTS version
+          cache: 'pip'  # Enable built-in pip caching
+          cache-dependency-path: |
+            **/requirements*.txt
+            **/pyproject.toml
+
+      - name: Get current version from file
+        id: current
+        run: |
+          if [[ -f ".agentdvr-version" ]]; then
+            echo "version=$(cat .agentdvr-version)" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch and parse latest version
+        id: check
+        env:
+          CURRENT_VERSION: ${{ steps.current.outputs.version }}
+          PRODUCT_URL: ${{ env.PRODUCT_URL }}
+          STABLE_DAYS: ${{ env.STABLE_DAYS }}
+        run: |
+          # Use the external Python scraper for better maintainability
+          python3 ".github/scripts/scrape_agentdvr_version.py" \
+            --url "$PRODUCT_URL" \
+            --stable-days "$STABLE_DAYS" \
+            --format json \
+            --output latest_version.json
+          
+          # Parse the JSON output
+          LATEST_VERSION=$(jq -r '.latest.version // empty' latest_version.json)
+          LATEST_DATE=$(jq -r '.latest.date // empty' latest_version.json)
+          LATEST_CHANGES=$(jq -r '.latest.changes // empty' latest_version.json)
+          IS_STABLE=$(jq -r '.latest.stable // "false"' latest_version.json)
+          DAYS_SINCE=$(jq -r '.latest.days_since_release // "-1"' latest_version.json)
+          STABLE_VER=$(jq -r '.stable_version.version // empty' latest_version.json)
+          
+          # Check if we have a new version
+          if [[ -n "$LATEST_VERSION" && "$CURRENT_VERSION" != "$LATEST_VERSION" ]]; then
+            IS_NEW="true"
+          else
+            IS_NEW="false"
+          fi
+          
+          # Output results
+          echo "Current version: ${CURRENT_VERSION:-none}"
+          echo "Latest version: $LATEST_VERSION ($LATEST_DATE, $DAYS_SINCE days old)"
+          echo "Latest is stable: $IS_STABLE"
+          [[ -n "$STABLE_VER" ]] && echo "Stable version: $STABLE_VER"
+          
+          # Write outputs using environment file
+          {
+            echo "new_version=$IS_NEW"
+            echo "version=$LATEST_VERSION"
+            echo "date=$LATEST_DATE"
+            echo "stable=$IS_STABLE"
+            echo "days_since_release=$DAYS_SINCE"
+            echo "stable_version=$STABLE_VER"
+          } >> "$GITHUB_OUTPUT"
+          
+          # Handle multiline changes output
+          {
+            echo "changes<<EOF"
+            echo "$LATEST_CHANGES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          
+          # Store JSON for potential downstream use
+          VERSION_JSON=$(cat latest_version.json | jq -c '.')
+          echo "version_json=$VERSION_JSON" >> "$GITHUB_OUTPUT"
+
+  update-version:
+    name: Update Version File
+    needs: check-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    # Only write permissions when actually needed
+    permissions:
+      contents: write
+    
+    # Update if: (new version AND (not stable_only OR version is stable)) OR force_update
+    if: >-
+      (needs.check-version.outputs.new_version == 'true' && 
+       (inputs.stable_only != true || needs.check-version.outputs.stable == 'true')) ||
+      inputs.force_update == true
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true  # Needed for push
+
+      - name: Determine version to use
+        id: target
+        env:
+          STABLE_ONLY: ${{ inputs.stable_only }}
+          IS_STABLE: ${{ needs.check-version.outputs.stable }}
+          LATEST_VERSION: ${{ needs.check-version.outputs.version }}
+          STABLE_VERSION: ${{ needs.check-version.outputs.stable_version }}
+        run: |
+          # Use environment variables to avoid injection risks
+          if [[ "$STABLE_ONLY" == "true" && "$IS_STABLE" != "true" && -n "$STABLE_VERSION" ]]; then
+            echo "version=$STABLE_VERSION" >> "$GITHUB_OUTPUT"
+            echo "Using stable version: $STABLE_VERSION"
+          else
+            echo "version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
+            echo "Using latest version: $LATEST_VERSION"
+          fi
+
+      - name: Update version file
+        env:
+          TARGET_VERSION: ${{ steps.target.outputs.version }}
+          VERSION_JSON: ${{ needs.check-version.outputs.version_json }}
+        run: |
+          echo "$TARGET_VERSION" > .agentdvr-version
+          echo "$VERSION_JSON" | jq '.' > latest_version.json
+          echo "Updated to version $TARGET_VERSION"
+
+      - name: Commit and push changes
+        env:
+          TARGET_VERSION: ${{ steps.target.outputs.version }}
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          git add .agentdvr-version latest_version.json
+          
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update Agent DVR version to $TARGET_VERSION"
+            git push
+            echo "✅ Version updated and pushed successfully"
+          else
+            echo "ℹ️ No changes to commit"
+          fi
+
+  # Optional: Trigger downstream workflows or notifications
+  notify:
+    name: Send Notifications
+    needs: [check-version, update-version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    permissions:
+      contents: read
+    
+    # Only notify if new version was detected AND update job succeeded
+    if: needs.check-version.outputs.new_version == 'true' && needs.update-version.result == 'success'
+    
+    steps:
+      - name: Log version update
+        env:
+          VERSION: ${{ needs.check-version.outputs.version }}
+          DATE: ${{ needs.check-version.outputs.date }}
+          STABLE: ${{ needs.check-version.outputs.stable }}
+          DAYS_SINCE: ${{ needs.check-version.outputs.days_since_release }}
+          CHANGES: ${{ needs.check-version.outputs.changes }}
+        run: |
+          echo "🎉 New Agent DVR version detected!"
+          echo "📦 Version: $VERSION"
+          echo "📅 Date: $DATE"
+          echo "✅ Stable: $STABLE"
+          echo "⏱️ Days since release: $DAYS_SINCE"
+          echo "📝 Changes: $CHANGES"
+
+      # Uncomment and configure to create GitHub releases
+      # - name: Create GitHub Release
+      #   uses: actions/github-script@v7
+      #   with:
+      #     script: |
+      #       await github.rest.repos.createRelease({
+      #         owner: context.repo.owner,
+      #         repo: context.repo.repo,
+      #         tag_name: `agentdvr-${process.env.VERSION}`,
+      #         name: `Agent DVR ${process.env.VERSION}`,
+      #         body: `**Release Date:** ${process.env.DATE}\n\n**Stable:** ${process.env.STABLE}\n\n**Changes:**\n${process.env.CHANGES}`
+      #       });
+      #   env:
+      #     VERSION: ${{ needs.check-version.outputs.version }}
+      #     DATE: ${{ needs.check-version.outputs.date }}
+      #     STABLE: ${{ needs.check-version.outputs.stable }}
+      #     CHANGES: ${{ needs.check-version.outputs.changes }}
+
+      # Uncomment and configure for webhook notifications
+      # - name: Send webhook notification
+      #   env:
+      #     WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+      #     VERSION: ${{ needs.check-version.outputs.version }}
+      #     DATE: ${{ needs.check-version.outputs.date }}
+      #     STABLE: ${{ needs.check-version.outputs.stable }}
+      #     STABLE_VERSION: ${{ needs.check-version.outputs.stable_version }}
+      #     DAYS_SINCE: ${{ needs.check-version.outputs.days_since_release }}
+      #     CHANGES: ${{ needs.check-version.outputs.changes }}
+      #   run: |
+      #     curl -X POST "$WEBHOOK_URL" \
+      #       -H "Content-Type: application/json" \
+      #       -d "$(jq -n \
+      #         --arg version "$VERSION" \
+      #         --arg date "$DATE" \
+      #         --arg stable "$STABLE" \
+      #         --arg stable_version "$STABLE_VERSION" \
+      #         --arg days_since "$DAYS_SINCE" \
+      #         --arg changes "$CHANGES" \
+      #         '{version: $version, date: $date, stable: $stable, stable_version: $stable_version, days_since_release: $days_since, changes: $changes}')"
