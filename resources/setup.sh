@@ -18,11 +18,12 @@ if [ "$(id -u)" -ne 0 ] && ! sudo -n true 2>/dev/null; then
 fi
 
 # Check and install required dependencies
-REQUIRED_CMDS="curl unzip"
+REQUIRED_CMDS="sudo curl unzip"
 for cmd in $REQUIRED_CMDS; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "Installing missing dependency: $cmd"
-        apt-get update && apt-get install -y "$cmd"
+        apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update
+        apt-get install -y "$cmd"
     fi
 done
 
