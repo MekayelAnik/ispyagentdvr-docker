@@ -1110,6 +1110,9 @@ jobs:
           mkdir -p resources/build_data
           echo "$VERSION_UNDERSCORE" > resources/build_data/version
 
+          # Update .agentdvr-version (consolidated from check-agentdvr-version workflow)
+          echo "$LATEST_VERSION" > .agentdvr-version
+
           echo "Updated metadata files"
 
       - name: Commit changes
@@ -1117,7 +1120,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add resources/tag resources/build-timestamp resources/build_data/version 2>/dev/null || true
+          git add resources/tag resources/build-timestamp resources/build_data/version .agentdvr-version 2>/dev/null || true
 
           if git diff --staged --quiet; then
             echo "No changes to commit"

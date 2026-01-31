@@ -2,73 +2,19 @@
 
 ## Overview
 
-This repository uses GitHub Actions workflows for:
+This repository uses a unified GitHub Actions workflow for:
 1. **Automated Docker image building and publishing**
 2. **Agent DVR version monitoring and tracking**
+3. **Registry synchronization**
+4. **5-day stable promotion**
 
 ---
 
-## Workflows
+## Workflow
 
 | Workflow | File | Purpose |
 |----------|------|---------|
-| Docker Build & Publish | `docker-build.yml` | Build and publish Docker images |
-| Version Checker | `check-agentdvr-version.yml` | Monitor for new Agent DVR releases |
-
----
-
-## Workflow: Version Checker
-
-**File:** `.github/workflows/check-agentdvr-version.yml`
-
-### Purpose
-
-Automatically monitors the iSpy Connect website for new Agent DVR releases and updates the version tracking file.
-
-### Features
-
-- **Daily Checks**: Runs at 6:00 AM UTC
-- **Stability Tracking**: Marks versions as "stable" after 5 days
-- **Manual Triggers**: Force update or stable-only options
-- **Concurrency Control**: Prevents duplicate workflow runs
-- **Security Hardened**: Minimal permissions, environment variables for inputs
-
-### Trigger Options
-
-| Trigger | Description |
-|---------|-------------|
-| Schedule | Daily at 6:00 AM UTC |
-| Manual | `workflow_dispatch` with options |
-
-### Manual Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `force_update` | `false` | Update even if no new version detected |
-| `stable_only` | `false` | Only update if version is stable (5+ days old) |
-
-### How It Works
-
-1. **Check Job**: Scrapes iSpy product history page for latest version
-2. **Compare**: Checks against `.agentdvr-version` file
-3. **Update Job**: If new version found, updates version file and commits
-4. **Notify Job**: Logs version information (can be extended for webhooks)
-
-### Files
-
-| File | Purpose |
-|------|---------|
-| `.agentdvr-version` | Stores current tracked version |
-| `latest_version.json` | Full version metadata (JSON) |
-| `.github/scripts/scrape_agentdvr_version.py` | Python scraper script |
-
-### Security Features
-
-- Read-only default permissions (`permissions: {}`)
-- Write permissions only for update job
-- Environment variables instead of direct interpolation
-- `persist-credentials: false` on read-only checkouts
-- Explicit timeouts on all jobs
+| Docker Build & Publish | `docker-build.yml` | Build, publish, version tracking, and image management |
 
 ---
 
@@ -339,7 +285,6 @@ The workflow uses local composite actions to reduce code duplication:
 | Script | Path | Purpose |
 |--------|------|---------|
 | Version Utils | `.github/scripts/version-utils.sh` | Version parsing, validation, date generation |
-| Version Scraper | `.github/scripts/scrape_agentdvr_version.py` | Parse iSpy release history |
 
 ---
 
