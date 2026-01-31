@@ -1,0 +1,56 @@
+# =============================================================================
+# Composite Action: Registry Sync
+# =============================================================================
+# Reusable action for syncing images between Docker Hub and GHCR
+# Automatically handles bidirectional sync based on image availability
+# =============================================================================
+
+name: 'Registry Sync'
+description: 'Synchronize Docker images between registries'
+
+inputs:
+  dockerhub_repo:
+    description: 'Docker Hub repository (e.g., username/image)'
+    required: true
+  ghcr_repo:
+    description: 'GHCR repository (e.g., ghcr.io/owner/image)'
+    required: true
+  tags:
+    description: 'Comma-separated list of tags to sync'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Sync images between registries
+      shell: bash
+      env:
+        DOCKERHUB_REPO: ${{ inputs.dockerhub_repo }}
+        GHCR_REPO: ${{ inputs.ghcr_repo }}
+        TAGS: ${{ inputs.tags }}
+      run: |
+        sync_tag() {
+          local tag=$1
+          local dh_ref="${DOCKERHUB_REPO}:${tag}"
+          local ghcr_ref="${GHCR_REPO}:${tag}"
+
+          DH_EXISTS=$(skopeo inspect "docker://${dh_ref}" > /dev/null 2>&1 && echo "yes" || echo "no")
+          GHCR_EXISTS=$(skopeo inspect "docker://${ghcr_ref}" > /dev/null 2>&1 && echo "yes" || echo "no")
+
+          if [ "$DH_EXISTS" == "yes" ] && [ "$GHCR_EXISTS" == "no" ]; then
+            echo "Syncing $tag: Docker Hub → GHCR"
+            skopeo copy --all "docker://${dh_ref}" "docker://${ghcr_ref}"
+          elif [ "$DH_EXISTS" == "no" ] && [ "$GHCR_EXISTS" == "yes" ]; then
+            echo "Syncing $tag: GHCR → Docker Hub"
+            skopeo copy --all "docker://${ghcr_ref}" "docker://${dh_ref}"
+          elif [ "$DH_EXISTS" == "yes" ] && [ "$GHCR_EXISTS" == "yes" ]; then
+            echo "Tag $tag: exists in both registries - no sync needed"
+          else
+            echo "Tag $tag: not found in either registry - skipping"
+          fi
+        }
+
+        IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
+        for tag in "${TAG_ARRAY[@]}"; do
+          sync_tag "$(echo "$tag" | xargs)"
+        done

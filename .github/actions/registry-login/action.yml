@@ -1,0 +1,49 @@
+# =============================================================================
+# Composite Action: Registry Login
+# =============================================================================
+# Reusable action to login to Docker Hub and GitHub Container Registry
+# Reduces code duplication across workflow jobs
+# =============================================================================
+
+name: 'Registry Login'
+description: 'Login to Docker Hub and GitHub Container Registry'
+
+inputs:
+  dockerhub_username:
+    description: 'Docker Hub username'
+    required: true
+  dockerhub_token:
+    description: 'Docker Hub access token'
+    required: true
+  ghcr_actor:
+    description: 'GitHub actor for GHCR login'
+    required: true
+  ghcr_token:
+    description: 'GitHub token for GHCR login'
+    required: true
+  push_to_dockerhub:
+    description: 'Enable Docker Hub login'
+    required: false
+    default: 'true'
+  push_to_ghcr:
+    description: 'Enable GHCR login'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Login to Docker Hub
+      if: inputs.push_to_dockerhub != 'false'
+      uses: docker/login-action@v3
+      with:
+        username: ${{ inputs.dockerhub_username }}
+        password: ${{ inputs.dockerhub_token }}
+
+    - name: Login to GitHub Container Registry
+      if: inputs.push_to_ghcr != 'false'
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ inputs.ghcr_actor }}
+        password: ${{ inputs.ghcr_token }}

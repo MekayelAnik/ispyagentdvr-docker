@@ -1,0 +1,65 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    "schedule:weekly",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "labels": ["dependencies", "automated"],
+  "assignees": ["mekayelanik"],
+  "reviewers": ["mekayelanik"],
+  "timezone": "Asia/Dhaka",
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 5,
+  "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
+  "osvVulnerabilityAlerts": true,
+  "packageRules": [
+    {
+      "description": "Automerge minor and patch updates for stable packages",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "matchCurrentVersion": "!/^0/",
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    },
+    {
+      "description": "Security-related packages - high priority",
+      "matchManagers": ["github-actions"],
+      "matchPackagePatterns": ["^aquasecurity/", "^securego/", "^github/codeql"],
+      "groupName": "security-actions",
+      "prPriority": 10,
+      "labels": ["dependencies", "github-actions", "security", "priority"]
+    },
+    {
+      "description": "Core GitHub Actions (checkout, setup, upload/download)",
+      "matchManagers": ["github-actions"],
+      "matchPackagePatterns": ["^actions/"],
+      "groupName": "github-core-actions",
+      "prPriority": 5,
+      "labels": ["dependencies", "github-actions"]
+    },
+    {
+      "description": "Docker ecosystem actions",
+      "matchManagers": ["github-actions"],
+      "matchPackagePatterns": ["^docker/"],
+      "groupName": "docker-actions",
+      "prPriority": 3,
+      "labels": ["dependencies", "github-actions", "docker"]
+    },
+    {
+      "description": "All other GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "excludePackagePatterns": ["^actions/", "^docker/", "^aquasecurity/", "^securego/", "^github/codeql"],
+      "groupName": "other-github-actions",
+      "prPriority": 1,
+      "labels": ["dependencies", "github-actions"]
+    }
+  ],
+  "commitMessagePrefix": "ci: ",
+  "commitMessageAction": "update",
+  "commitMessageTopic": "{{depName}}",
+  "gitIgnoredAuthors": ["renovate[bot]@users.noreply.github.com"]
+}

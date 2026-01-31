@@ -1,0 +1,1132 @@
+# =============================================================================
+# iSpy Agent DVR Docker Image Builder
+# =============================================================================
+# Consolidated workflow for automated and manual Docker image builds
+#
+# Features:
+#   - Automatic release detection (every 30 minutes - time-based)
+#   - Multi-platform builds (amd64, arm64, arm/v7)
+#   - Dual registry support (Docker Hub + ghcr.io)
+#   - Registry synchronization
+#   - Manual version builds (range or comma-separated)
+#   - Image promotion (latest/stable tags)
+#   - 5-day stable promotion
+#   - ZSTD compression + OCI media types
+#   - Vulnerability scanning (non-blocking)
+#   - Build provenance and SBOM
+#   - Version validation with warnings (missing versions don't fail build)
+#
+# Required Secrets:
+#   - DOCKERHUB_USERNAME: Docker Hub username
+#   - DOCKERHUB_TOKEN: Docker Hub access token (with push permissions)
+#
+# Note: GITHUB_TOKEN is automatically provided and has packages:write scope
+#
+# =============================================================================
+
+name: Docker Build & Publish
+
+on:
+  # =========================================================================
+  # TIME-BASED TRIGGER: Check for new releases every 30 minutes
+  # =========================================================================
+  schedule:
+    - cron: '*/30 * * * *'
+
+  # =========================================================================
+  # MANUAL TRIGGER: With detailed input options
+  # =========================================================================
+  workflow_dispatch:
+    inputs:
+      # --- Action Selection ---
+      action:
+        description: 'Select the action to perform'
+        required: true
+        type: choice
+        options:
+          - 'auto-check'
+          - 'build-versions'
+          - 'promote-image'
+          - 'sync-registries'
+          - 'mark-stable'
+        default: 'auto-check'
+
+      # --- Version Build Options ---
+      versions:
+        description: |
+          Versions to build (for build-versions action)
+          Examples:
+            - Single: 7.0.9.0
+            - Multiple: 7.0.5.0,7.0.6.0,7.0.7.0
+            - Range: 7.0.5.0-7.0.9.0
+        required: false
+        type: string
+        default: ''
+
+      # --- Base Image Selection ---
+      base_image:
+        description: 'Base image for Docker build'
+        required: false
+        type: choice
+        options:
+          - 'default (latest)'
+          - 'trixie-slim-default-ffmpeg'
+          - 'bookworm-slim-vlc-jellyfin-ffmpeg'
+          - 'custom'
+        default: 'default (latest)'
+
+      custom_base_image:
+        description: 'Custom base image URL (only when base_image=custom)'
+        required: false
+        type: string
+        default: ''
+
+      # --- Image Promotion Options ---
+      promote_version:
+        description: 'Source version to promote (for promote-image action)'
+        required: false
+        type: string
+        default: ''
+
+      promote_tag:
+        description: 'Target tag for promotion'
+        required: false
+        type: choice
+        options:
+          - 'latest'
+          - 'stable'
+        default: 'latest'
+
+      # --- Build Behavior Options (Checkboxes) ---
+      force_build:
+        description: 'Force rebuild even if image already exists in registries'
+        required: false
+        type: boolean
+        default: false
+
+      skip_existing:
+        description: 'Skip versions that already exist in registries'
+        required: false
+        type: boolean
+        default: true
+
+      tag_as_latest:
+        description: 'Also tag the built image(s) as latest'
+        required: false
+        type: boolean
+        default: false
+
+      run_security_scan:
+        description: 'Run Trivy security vulnerability scan'
+        required: false
+        type: boolean
+        default: true
+
+      push_to_dockerhub:
+        description: 'Push to Docker Hub registry'
+        required: false
+        type: boolean
+        default: true
+
+      push_to_ghcr:
+        description: 'Push to GitHub Container Registry (ghcr.io)'
+        required: false
+        type: boolean
+        default: true
+
+      # --- Base Image Update Options ---
+      update_base_image:
+        description: 'Rebuild if base image has updates (checks digest)'
+        required: false
+        type: boolean
+        default: false
+
+      # --- Platform Options ---
+      platforms:
+        description: 'Target platforms for multi-arch build'
+        required: false
+        type: choice
+        options:
+          - 'linux/amd64,linux/arm64,linux/arm/v7'
+          - 'linux/amd64,linux/arm64'
+          - 'linux/amd64'
+        default: 'linux/amd64,linux/arm64,linux/arm/v7'
+
+      # --- Compression Options ---
+      compression_level:
+        description: 'ZSTD compression level (1-22, higher = smaller but slower)'
+        required: false
+        type: choice
+        options:
+          - '22'
+          - '19'
+          - '15'
+          - '10'
+          - '5'
+          - '3'
+        default: '22'
+
+# Cancel in-progress runs for the same workflow/version combination
+concurrency:
+  group: docker-build-${{ github.event.inputs.versions || 'scheduled' }}-${{ github.run_id }}
+  cancel-in-progress: true
+
+env:
+  TZ: Asia/Dhaka  # Bangladesh Time (UTC+6)
+  DOCKERHUB_REPO: mekayelanik/ispyagentdvr
+  GHCR_REPO: ghcr.io/${{ github.repository_owner }}/ispyagentdvr
+  DEFAULT_PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
+  BINARY_BASE_URL: https://ispyfiles.azureedge.net/downloads/Agent
+  RELEASE_URL: https://www.ispyconnect.com/producthistory.aspx?productid=27
+  DEFAULT_BASE_IMAGE: mekayelanik/ispyagentdvr-base-image:latest
+  # Base image update check: set to 'true' to enable automatic rebuilds when base image changes
+  UPDATE_BASE_IMAGE_ENABLED: 'false'
+
+jobs:
+  # ===========================================================================
+  # Job 1: Check for new releases and validate requested versions
+  # ===========================================================================
+  check-releases:
+    name: Check Releases & Validate Versions
+    runs-on: ubuntu-latest
+    outputs:
+      versions_to_build: ${{ steps.determine-versions.outputs.versions }}
+      versions_json: ${{ steps.determine-versions.outputs.versions_json }}
+      latest_version: ${{ steps.fetch-releases.outputs.latest_version }}
+      available_versions: ${{ steps.fetch-releases.outputs.available_versions }}
+      should_build: ${{ steps.determine-versions.outputs.should_build }}
+      should_mark_stable: ${{ steps.check-stable.outputs.should_mark_stable }}
+      stable_version: ${{ steps.check-stable.outputs.stable_version }}
+      action_type: ${{ steps.set-action.outputs.action }}
+      missing_versions: ${{ steps.validate-versions.outputs.missing_versions }}
+      base_image: ${{ steps.resolve-base-image.outputs.image }}
+      base_image_updated: ${{ steps.check-base-image.outputs.updated }}
+      platforms: ${{ steps.set-platforms.outputs.platforms }}
+      compression_level: ${{ steps.set-compression.outputs.level }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set action type
+        id: set-action
+        run: |
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            echo "action=auto-check" >> $GITHUB_OUTPUT
+            echo "Running scheduled auto-check..."
+          else
+            echo "action=${{ github.event.inputs.action }}" >> $GITHUB_OUTPUT
+            echo "Running manual action: ${{ github.event.inputs.action }}"
+          fi
+
+      - name: Set platforms
+        id: set-platforms
+        run: |
+          if [ -n "${{ github.event.inputs.platforms }}" ]; then
+            echo "platforms=${{ github.event.inputs.platforms }}" >> $GITHUB_OUTPUT
+          else
+            echo "platforms=${{ env.DEFAULT_PLATFORMS }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set compression level
+        id: set-compression
+        run: |
+          # Default to level 22 (maximum compression) if not specified
+          if [ -n "${{ github.event.inputs.compression_level }}" ]; then
+            echo "level=${{ github.event.inputs.compression_level }}" >> $GITHUB_OUTPUT
+          else
+            echo "level=22" >> $GITHUB_OUTPUT
+          fi
+          echo "ZSTD compression level: ${{ github.event.inputs.compression_level || '22' }}"
+
+      - name: Resolve base image
+        id: resolve-base-image
+        run: |
+          INPUT_BASE="${{ github.event.inputs.base_image }}"
+          CUSTOM_BASE="${{ github.event.inputs.custom_base_image }}"
+
+          case "$INPUT_BASE" in
+            "custom")
+              if [ -n "$CUSTOM_BASE" ]; then
+                echo "image=$CUSTOM_BASE" >> $GITHUB_OUTPUT
+              else
+                echo "::warning::Custom base image selected but no URL provided, using default"
+                echo "image=${{ env.DEFAULT_BASE_IMAGE }}" >> $GITHUB_OUTPUT
+              fi
+              ;;
+            "trixie-slim-default-ffmpeg")
+              echo "image=mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-default-ffmpeg" >> $GITHUB_OUTPUT
+              ;;
+            "bookworm-slim-vlc-jellyfin-ffmpeg")
+              echo "image=mekayelanik/ispyagentdvr-base-image:ispyagentdvr-bookworm-slim-vlc-jellyfin-ffmpeg" >> $GITHUB_OUTPUT
+              ;;
+            *)
+              echo "image=${{ env.DEFAULT_BASE_IMAGE }}" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq skopeo
+
+      - name: Login to registries
+        uses: ./.github/actions/registry-login
+        with:
+          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+          ghcr_actor: ${{ github.actor }}
+          ghcr_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch and parse release history
+        id: fetch-releases
+        run: |
+          echo "Fetching release history from iSpy..."
+
+          # Fetch the page
+          curl -s "${{ env.RELEASE_URL }}" -o /tmp/releases.html
+
+          # Parse the HTML table to extract versions and dates
+          # Using more robust parsing with awk
+          grep -oP '(?<=<td>)\d+\.\d+\.\d+\.\d+(?=</td>)' /tmp/releases.html | head -20 > /tmp/versions.txt
+          grep -oP '(?<=<td>)\d{1,2}/\d{1,2}/\d{4}(?=</td>)' /tmp/releases.html | head -20 > /tmp/dates.txt
+
+          # Create combined output
+          paste -d'|' /tmp/versions.txt /tmp/dates.txt > /tmp/releases.txt
+
+          # Get latest version
+          LATEST_VERSION=$(head -1 /tmp/versions.txt)
+          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+
+          # Create JSON array of available versions
+          AVAILABLE_VERSIONS=$(cat /tmp/versions.txt | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "available_versions=$AVAILABLE_VERSIONS" >> $GITHUB_OUTPUT
+
+          echo "Latest version: $LATEST_VERSION"
+          echo "Found $(wc -l < /tmp/versions.txt) versions in release history"
+
+          # Save for other steps
+          cp /tmp/versions.txt /tmp/available_versions.txt
+
+      - name: Validate requested versions against available versions
+        id: validate-versions
+        run: |
+          INPUT_VERSIONS="${{ github.event.inputs.versions }}"
+          AVAILABLE_FILE="/tmp/available_versions.txt"
+
+          # Function to check if version exists
+          version_exists() {
+            grep -q "^$1$" "$AVAILABLE_FILE"
+          }
+
+          # Function to expand version range (bidirectional - handles both orderings)
+          expand_range() {
+            local start=$1
+            local end=$2
+            local found_versions=""
+            local in_range=false
+            local start_line=0
+            local end_line=0
+            local line_num=0
+
+            # First pass: find line numbers of start and end versions
+            while IFS= read -r version; do
+              line_num=$((line_num + 1))
+              if [ "$version" == "$start" ]; then
+                start_line=$line_num
+              fi
+              if [ "$version" == "$end" ]; then
+                end_line=$line_num
+              fi
+            done < "$AVAILABLE_FILE"
+
+            # Determine direction: if start_line > end_line, versions are newest-first
+            # Swap if needed so we always iterate from first_line to last_line
+            local first_line=$start_line
+            local last_line=$end_line
+            if [ $start_line -gt $end_line ] && [ $end_line -gt 0 ]; then
+              first_line=$end_line
+              last_line=$start_line
+            fi
+
+            # Second pass: collect versions in range
+            line_num=0
+            while IFS= read -r version; do
+              line_num=$((line_num + 1))
+              if [ $line_num -ge $first_line ] && [ $line_num -le $last_line ]; then
+                if [ -z "$found_versions" ]; then
+                  found_versions="$version"
+                else
+                  found_versions="$found_versions,$version"
+                fi
+              fi
+            done < "$AVAILABLE_FILE"
+
+            echo "$found_versions"
+          }
+
+          MISSING_VERSIONS=""
+          VALID_VERSIONS=""
+
+          if [ -n "$INPUT_VERSIONS" ]; then
+            # Check if it's a range format (contains - but not at start, and no comma)
+            if [[ "$INPUT_VERSIONS" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+-[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              # Range format: 7.0.5.0-7.0.9.0
+              START_VER=$(echo "$INPUT_VERSIONS" | cut -d'-' -f1)
+              END_VER=$(echo "$INPUT_VERSIONS" | cut -d'-' -f2)
+
+              echo "Processing version range: $START_VER to $END_VER"
+
+              # Check if start and end versions exist
+              if ! version_exists "$START_VER"; then
+                echo "::warning::Start version $START_VER not found in release history"
+                MISSING_VERSIONS="$START_VER"
+              fi
+              if ! version_exists "$END_VER"; then
+                echo "::warning::End version $END_VER not found in release history"
+                if [ -z "$MISSING_VERSIONS" ]; then
+                  MISSING_VERSIONS="$END_VER"
+                else
+                  MISSING_VERSIONS="$MISSING_VERSIONS,$END_VER"
+                fi
+              fi
+
+              # Expand range to get all versions
+              VALID_VERSIONS=$(expand_range "$START_VER" "$END_VER")
+
+              if [ -z "$VALID_VERSIONS" ]; then
+                echo "::warning::No versions found in range $START_VER to $END_VER"
+              fi
+
+            else
+              # Comma-separated or single version
+              IFS=',' read -ra VERSION_ARRAY <<< "$INPUT_VERSIONS"
+
+              for version in "${VERSION_ARRAY[@]}"; do
+                version=$(echo "$version" | xargs)  # Trim whitespace
+                if version_exists "$version"; then
+                  if [ -z "$VALID_VERSIONS" ]; then
+                    VALID_VERSIONS="$version"
+                  else
+                    VALID_VERSIONS="$VALID_VERSIONS,$version"
+                  fi
+                else
+                  echo "::warning::Version $version not found in release history - will be skipped"
+                  if [ -z "$MISSING_VERSIONS" ]; then
+                    MISSING_VERSIONS="$version"
+                  else
+                    MISSING_VERSIONS="$MISSING_VERSIONS,$version"
+                  fi
+                fi
+              done
+            fi
+          fi
+
+          echo "valid_versions=$VALID_VERSIONS" >> $GITHUB_OUTPUT
+          echo "missing_versions=$MISSING_VERSIONS" >> $GITHUB_OUTPUT
+
+          if [ -n "$MISSING_VERSIONS" ]; then
+            echo "::warning::The following versions were not found and will be skipped: $MISSING_VERSIONS"
+          fi
+
+          echo "Valid versions to process: $VALID_VERSIONS"
+
+      - name: Check existing images in registries
+        id: check-existing
+        run: |
+          check_image_exists() {
+            local registry=$1
+            local tag=$2
+            if skopeo inspect "docker://${registry}:${tag}" > /dev/null 2>&1; then
+              echo "exists"
+            else
+              echo "missing"
+            fi
+          }
+
+          LATEST_VERSION="${{ steps.fetch-releases.outputs.latest_version }}"
+
+          # Check Docker Hub
+          DOCKERHUB_STATUS=$(check_image_exists "${{ env.DOCKERHUB_REPO }}" "$LATEST_VERSION")
+          echo "dockerhub_latest_status=$DOCKERHUB_STATUS" >> $GITHUB_OUTPUT
+
+          # Check GHCR
+          GHCR_STATUS=$(check_image_exists "${{ env.GHCR_REPO }}" "$LATEST_VERSION")
+          echo "ghcr_latest_status=$GHCR_STATUS" >> $GITHUB_OUTPUT
+
+          echo "Latest version ($LATEST_VERSION) - Docker Hub: $DOCKERHUB_STATUS, GHCR: $GHCR_STATUS"
+
+      - name: Check base image for updates
+        id: check-base-image
+        run: |
+          BASE_IMAGE="${{ steps.resolve-base-image.outputs.image }}"
+          LATEST_VERSION="${{ steps.fetch-releases.outputs.latest_version }}"
+          UPDATE_ENABLED="${{ github.event.inputs.update_base_image || env.UPDATE_BASE_IMAGE_ENABLED }}"
+
+          echo "Base image update check enabled: $UPDATE_ENABLED"
+
+          if [ "$UPDATE_ENABLED" != "true" ]; then
+            echo "updated=false" >> $GITHUB_OUTPUT
+            echo "Base image update check is disabled"
+            exit 0
+          fi
+
+          echo "Checking if base image has updates..."
+
+          # Get base image digest
+          BASE_DIGEST=$(skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Digest' || echo "unknown")
+          echo "Base image digest: $BASE_DIGEST"
+
+          if [ "$BASE_DIGEST" == "unknown" ] || [ -z "$BASE_DIGEST" ]; then
+            echo "::warning::Could not fetch base image digest"
+            echo "updated=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Check if our latest image exists and get its base layer info
+          # We store base image digest in labels during build
+          CURRENT_IMAGE="${{ env.DOCKERHUB_REPO }}:${LATEST_VERSION}"
+          CURRENT_BASE_LABEL=$(skopeo inspect "docker://${CURRENT_IMAGE}" 2>/dev/null | jq -r '.Labels["org.opencontainers.image.base.digest"] // empty' || echo "")
+
+          if [ -z "$CURRENT_BASE_LABEL" ]; then
+            # Fallback: check image creation time vs base image creation time
+            CURRENT_CREATED=$(skopeo inspect "docker://${CURRENT_IMAGE}" 2>/dev/null | jq -r '.Created' || echo "")
+            BASE_CREATED=$(skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Created' || echo "")
+
+            if [ -n "$CURRENT_CREATED" ] && [ -n "$BASE_CREATED" ]; then
+              CURRENT_EPOCH=$(date -d "$CURRENT_CREATED" +%s 2>/dev/null || echo "0")
+              BASE_EPOCH=$(date -d "$BASE_CREATED" +%s 2>/dev/null || echo "0")
+
+              if [ "$BASE_EPOCH" -gt "$CURRENT_EPOCH" ]; then
+                echo "updated=true" >> $GITHUB_OUTPUT
+                echo "Base image is newer than current build - rebuild recommended"
+                exit 0
+              fi
+            fi
+            echo "updated=false" >> $GITHUB_OUTPUT
+            echo "No base image update detected (no label, using timestamp comparison)"
+          else
+            if [ "$CURRENT_BASE_LABEL" != "$BASE_DIGEST" ]; then
+              echo "updated=true" >> $GITHUB_OUTPUT
+              echo "Base image digest changed: $CURRENT_BASE_LABEL -> $BASE_DIGEST"
+            else
+              echo "updated=false" >> $GITHUB_OUTPUT
+              echo "Base image unchanged"
+            fi
+          fi
+
+      - name: Check for 5-day stable promotion
+        id: check-stable
+        run: |
+          # Read latest release date
+          LATEST_LINE=$(head -1 /tmp/releases.txt)
+          LATEST_DATE=$(echo "$LATEST_LINE" | cut -d'|' -f2)
+          LATEST_VERSION=$(echo "$LATEST_LINE" | cut -d'|' -f1)
+
+          if [ -z "$LATEST_DATE" ]; then
+            echo "::warning::Could not parse release date"
+            echo "should_mark_stable=false" >> $GITHUB_OUTPUT
+            echo "stable_version=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Convert date (M/D/YYYY) to epoch
+          # Handle both 1/1/2025 and 12/27/2025 formats
+          MONTH=$(echo "$LATEST_DATE" | cut -d'/' -f1)
+          DAY=$(echo "$LATEST_DATE" | cut -d'/' -f2)
+          YEAR=$(echo "$LATEST_DATE" | cut -d'/' -f3)
+
+          LATEST_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo "0")
+          CURRENT_EPOCH=$(date +%s)
+          FIVE_DAYS_SECONDS=$((5 * 24 * 60 * 60))
+          DAYS_OLD=$(( (CURRENT_EPOCH - LATEST_EPOCH) / 86400 ))
+
+          echo "Latest release ($LATEST_VERSION) is $DAYS_OLD days old"
+
+          if [ $LATEST_EPOCH -gt 0 ] && [ $((CURRENT_EPOCH - LATEST_EPOCH)) -ge $FIVE_DAYS_SECONDS ]; then
+            echo "should_mark_stable=true" >> $GITHUB_OUTPUT
+            echo "stable_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+            echo "Version $LATEST_VERSION is $DAYS_OLD days old, eligible for stable"
+          else
+            echo "should_mark_stable=false" >> $GITHUB_OUTPUT
+            echo "stable_version=" >> $GITHUB_OUTPUT
+            echo "Version is less than 5 days old, not eligible for stable yet"
+          fi
+
+      - name: Determine versions to build
+        id: determine-versions
+        run: |
+          ACTION="${{ steps.set-action.outputs.action }}"
+          FORCE_BUILD="${{ github.event.inputs.force_build }}"
+          SKIP_EXISTING="${{ github.event.inputs.skip_existing }}"
+          LATEST_VERSION="${{ steps.fetch-releases.outputs.latest_version }}"
+
+          filter_existing_versions() {
+            local versions=$1
+            local filtered=""
+
+            IFS=',' read -ra VERSION_ARRAY <<< "$versions"
+            for version in "${VERSION_ARRAY[@]}"; do
+              version=$(echo "$version" | xargs)
+
+              if [ "$SKIP_EXISTING" == "true" ] && [ "$FORCE_BUILD" != "true" ]; then
+                # Check if version exists in both registries
+                DH_EXISTS=$(skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${version}" > /dev/null 2>&1 && echo "yes" || echo "no")
+                GHCR_EXISTS=$(skopeo inspect "docker://${{ env.GHCR_REPO }}:${version}" > /dev/null 2>&1 && echo "yes" || echo "no")
+
+                if [ "$DH_EXISTS" == "yes" ] && [ "$GHCR_EXISTS" == "yes" ]; then
+                  echo "::notice::Skipping version $version - already exists in both registries"
+                  continue
+                fi
+              fi
+
+              if [ -z "$filtered" ]; then
+                filtered="$version"
+              else
+                filtered="$filtered,$version"
+              fi
+            done
+
+            echo "$filtered"
+          }
+
+          # Check if base image update should trigger rebuild
+          BASE_IMAGE_UPDATED="${{ steps.check-base-image.outputs.updated }}"
+          UPDATE_BASE_IMAGE="${{ github.event.inputs.update_base_image || env.UPDATE_BASE_IMAGE_ENABLED }}"
+
+          case "$ACTION" in
+            "auto-check")
+              DOCKERHUB_STATUS="${{ steps.check-existing.outputs.dockerhub_latest_status }}"
+              GHCR_STATUS="${{ steps.check-existing.outputs.ghcr_latest_status }}"
+
+              # Trigger build if: image missing OR force build OR (base image updated AND update enabled)
+              if [ "$DOCKERHUB_STATUS" == "missing" ] || [ "$GHCR_STATUS" == "missing" ] || [ "$FORCE_BUILD" == "true" ] || \
+                 ([ "$BASE_IMAGE_UPDATED" == "true" ] && [ "$UPDATE_BASE_IMAGE" == "true" ]); then
+                echo "versions=$LATEST_VERSION" >> $GITHUB_OUTPUT
+                echo "versions_json=[\"$LATEST_VERSION\"]" >> $GITHUB_OUTPUT
+                echo "should_build=true" >> $GITHUB_OUTPUT
+                if [ "$BASE_IMAGE_UPDATED" == "true" ] && [ "$UPDATE_BASE_IMAGE" == "true" ]; then
+                  echo "Will rebuild latest version due to base image update: $LATEST_VERSION"
+                else
+                  echo "Will build latest version: $LATEST_VERSION"
+                fi
+              else
+                echo "versions=" >> $GITHUB_OUTPUT
+                echo "versions_json=[]" >> $GITHUB_OUTPUT
+                echo "should_build=false" >> $GITHUB_OUTPUT
+                echo "Latest version already exists in both registries (base image unchanged)"
+              fi
+              ;;
+
+            "build-versions")
+              VALID_VERSIONS="${{ steps.validate-versions.outputs.valid_versions }}"
+
+              if [ -z "$VALID_VERSIONS" ]; then
+                echo "::warning::No valid versions to build"
+                echo "versions=" >> $GITHUB_OUTPUT
+                echo "versions_json=[]" >> $GITHUB_OUTPUT
+                echo "should_build=false" >> $GITHUB_OUTPUT
+              else
+                # Filter out existing versions if skip_existing is true
+                FILTERED_VERSIONS=$(filter_existing_versions "$VALID_VERSIONS")
+
+                if [ -z "$FILTERED_VERSIONS" ]; then
+                  echo "::notice::All requested versions already exist in registries"
+                  echo "versions=" >> $GITHUB_OUTPUT
+                  echo "versions_json=[]" >> $GITHUB_OUTPUT
+                  echo "should_build=false" >> $GITHUB_OUTPUT
+                else
+                  echo "versions=$FILTERED_VERSIONS" >> $GITHUB_OUTPUT
+                  # Convert to JSON array
+                  JSON_ARRAY=$(echo "$FILTERED_VERSIONS" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+                  echo "versions_json=$JSON_ARRAY" >> $GITHUB_OUTPUT
+                  echo "should_build=true" >> $GITHUB_OUTPUT
+                  echo "Will build versions: $FILTERED_VERSIONS"
+                fi
+              fi
+              ;;
+
+            "promote-image"|"sync-registries"|"mark-stable")
+              echo "versions=" >> $GITHUB_OUTPUT
+              echo "versions_json=[]" >> $GITHUB_OUTPUT
+              echo "should_build=false" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Summary
+        run: |
+          echo "## Release Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Action | ${{ steps.set-action.outputs.action }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Latest Version | ${{ steps.fetch-releases.outputs.latest_version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Versions to Build | ${{ steps.determine-versions.outputs.versions || 'None' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Should Build | ${{ steps.determine-versions.outputs.should_build }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Missing Versions | ${{ steps.validate-versions.outputs.missing_versions || 'None' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Eligible for Stable | ${{ steps.check-stable.outputs.should_mark_stable }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Base Image | ${{ steps.resolve-base-image.outputs.image }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Base Image Updated | ${{ steps.check-base-image.outputs.updated }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Platforms | ${{ steps.set-platforms.outputs.platforms }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ZSTD Compression | Level ${{ steps.set-compression.outputs.level }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # Job 2: Build Docker images (matrix strategy for multiple versions)
+  # ===========================================================================
+  build:
+    name: Build ${{ matrix.version }}
+    needs: check-releases
+    if: needs.check-releases.outputs.should_build == 'true' && needs.check-releases.outputs.versions_to_build != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        version: ${{ fromJson(needs.check-releases.outputs.versions_json) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: |
+          echo "Freeing up disk space..."
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo apt-get clean
+          df -h
+
+      - name: Set up QEMU for multi-platform builds
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64,arm
+
+      - name: Set up Docker Buildx (ultra-optimized)
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:master
+            network=host
+          buildkitd-flags: --debug --allow-insecure-entitlement network.host
+          # Ultra-optimized BuildKit configuration
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 4
+              gc = true
+              gckeepstorage = 20000000000
+              [[worker.oci.gcpolicy]]
+                keepBytes = 20000000000
+                keepDuration = 604800
+                filters = ["type==source.local", "type==exec.cachemount", "type==source.git.checkout"]
+              [[worker.oci.gcpolicy]]
+                all = true
+                keepBytes = 50000000000
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+
+      - name: Login to registries
+        uses: ./.github/actions/registry-login
+        with:
+          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+          ghcr_actor: ${{ github.actor }}
+          ghcr_token: ${{ secrets.GITHUB_TOKEN }}
+          push_to_dockerhub: ${{ github.event.inputs.push_to_dockerhub || 'true' }}
+          push_to_ghcr: ${{ github.event.inputs.push_to_ghcr || 'true' }}
+
+      - name: Prepare build context
+        run: |
+          VERSION="${{ matrix.version }}"
+          VERSION_UNDERSCORE="${VERSION//./_}"
+          BASE_IMAGE="${{ needs.check-releases.outputs.base_image }}"
+
+          # Create build_data directory
+          mkdir -p resources/build_data
+
+          # Write required files
+          echo "$BASE_IMAGE" > resources/build_data/base-image
+          echo "$VERSION_UNDERSCORE" > resources/build_data/version
+          echo "${{ env.BINARY_BASE_URL }}" > resources/build_data/binary_server_url
+          touch resources/build_data/publication
+
+          echo "=== Build Configuration ==="
+          echo "Version: $VERSION"
+          echo "Version (underscore): $VERSION_UNDERSCORE"
+          echo "Base Image: $BASE_IMAGE"
+          echo "Binary URL: ${{ env.BINARY_BASE_URL }}"
+
+          # Generate Dockerfile
+          bash DockerfileModifier.sh
+
+          echo ""
+          echo "=== Generated Dockerfile ==="
+          cat Dockerfile.ispyagentdvr-docker
+
+      - name: Get base image digest
+        id: base-digest
+        run: |
+          BASE_IMAGE="${{ needs.check-releases.outputs.base_image }}"
+          BASE_DIGEST=$(skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Digest' || echo "unknown")
+          echo "digest=$BASE_DIGEST" >> $GITHUB_OUTPUT
+          echo "Base image digest: $BASE_DIGEST"
+
+      - name: Determine image tags
+        id: tags
+        run: |
+          VERSION="${{ matrix.version }}"
+          LATEST_VERSION="${{ needs.check-releases.outputs.latest_version }}"
+          TAG_AS_LATEST="${{ github.event.inputs.tag_as_latest }}"
+          PUSH_DOCKERHUB="${{ github.event.inputs.push_to_dockerhub }}"
+          PUSH_GHCR="${{ github.event.inputs.push_to_ghcr }}"
+
+          # Generate date tag in Bangladesh time (UTC+6) - format: DDMMYYYY
+          DATE_TAG=$(TZ=Asia/Dhaka date +"%d%m%Y")
+          VERSION_DATE_TAG="${VERSION}-${DATE_TAG}"
+
+          TAGS=""
+
+          # Docker Hub tags
+          if [ "$PUSH_DOCKERHUB" != "false" ]; then
+            TAGS="${{ env.DOCKERHUB_REPO }}:${VERSION}"
+            TAGS="$TAGS,${{ env.DOCKERHUB_REPO }}:${VERSION_DATE_TAG}"
+            if [ "$VERSION" == "$LATEST_VERSION" ] || [ "$TAG_AS_LATEST" == "true" ]; then
+              TAGS="$TAGS,${{ env.DOCKERHUB_REPO }}:latest"
+            fi
+          fi
+
+          # GHCR tags
+          if [ "$PUSH_GHCR" != "false" ]; then
+            if [ -n "$TAGS" ]; then
+              TAGS="$TAGS,${{ env.GHCR_REPO }}:${VERSION}"
+            else
+              TAGS="${{ env.GHCR_REPO }}:${VERSION}"
+            fi
+            TAGS="$TAGS,${{ env.GHCR_REPO }}:${VERSION_DATE_TAG}"
+            if [ "$VERSION" == "$LATEST_VERSION" ] || [ "$TAG_AS_LATEST" == "true" ]; then
+              TAGS="$TAGS,${{ env.GHCR_REPO }}:latest"
+            fi
+          fi
+
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "date_tag=$DATE_TAG" >> $GITHUB_OUTPUT
+          echo "Image tags: $TAGS"
+
+      - name: Generate Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.DOCKERHUB_REPO }}
+            ${{ env.GHCR_REPO }}
+          tags: |
+            type=raw,value=${{ matrix.version }}
+            type=raw,value=${{ matrix.version }}-${{ steps.tags.outputs.date_tag }}
+            type=raw,value=latest,enable=${{ matrix.version == needs.check-releases.outputs.latest_version || github.event.inputs.tag_as_latest == 'true' }}
+          labels: |
+            org.opencontainers.image.title=iSpy Agent DVR
+            org.opencontainers.image.description=Agent DVR - Professional video surveillance software for Linux, Windows and macOS
+            org.opencontainers.image.vendor=mekayelanik
+            org.opencontainers.image.version=${{ matrix.version }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.documentation=https://www.ispyconnect.com/docs/agent/about
+            org.opencontainers.image.base.name=${{ needs.check-releases.outputs.base_image }}
+            org.opencontainers.image.base.digest=${{ steps.base-digest.outputs.digest }}
+
+      - name: Build and push Docker image
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.ispyagentdvr-docker
+          platforms: ${{ needs.check-releases.outputs.platforms }}
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Ultra-optimized cache configuration with ZSTD compression
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ env.GHCR_REPO }}:buildcache
+          cache-to: |
+            type=gha,mode=max,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }}
+            type=registry,ref=${{ env.GHCR_REPO }}:buildcache,mode=max,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }}
+          # Security attestations
+          provenance: mode=max
+          sbom: true
+          # Build arguments
+          build-args: |
+            BASE_IMAGE=${{ needs.check-releases.outputs.base_image }}
+            AGENTDVR_VERSION=${{ matrix.version }}
+            BUILDKIT_INLINE_CACHE=1
+          # Output optimizations: ZSTD compression (level from input, default 22), OCI compatibility, force re-compression
+          outputs: type=image,oci-mediatypes=true,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }},force-compression=true
+          # Allow network access during build
+          allow: network.host
+          # Use BuildKit features
+          build-contexts: |
+            resources=./resources
+
+      - name: Run Trivy vulnerability scanner
+        if: github.event.inputs.run_security_scan != 'false'
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: '${{ env.DOCKERHUB_REPO }}:${{ matrix.version }}'
+          format: 'sarif'
+          output: 'trivy-results-${{ matrix.version }}.sarif'
+          severity: 'CRITICAL,HIGH'
+          timeout: '10m'
+        continue-on-error: true
+
+      - name: Upload Trivy scan results
+        if: github.event.inputs.run_security_scan != 'false'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results-${{ matrix.version }}.sarif'
+          category: 'trivy-${{ matrix.version }}'
+        continue-on-error: true
+
+      - name: Build summary
+        run: |
+          echo "## Build Complete: ${{ matrix.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ matrix.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Digest | ${{ steps.build-push.outputs.digest }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image ID | ${{ steps.build-push.outputs.imageid }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Platforms | ${{ needs.check-releases.outputs.platforms }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Base Image | ${{ needs.check-releases.outputs.base_image }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ZSTD Compression | Level ${{ needs.check-releases.outputs.compression_level }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tags" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.tags.outputs.tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-info-${{ matrix.version }}
+          path: |
+            trivy-results-${{ matrix.version }}.sarif
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # ===========================================================================
+  # Job 3: Sync registries
+  # ===========================================================================
+  sync-registries:
+    name: Sync Registries
+    needs: [check-releases, build]
+    if: |
+      always() &&
+      (needs.check-releases.outputs.action_type == 'sync-registries' ||
+       (needs.check-releases.outputs.action_type == 'auto-check' && needs.build.result == 'success'))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install skopeo
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+
+      - name: Login to registries
+        uses: ./.github/actions/registry-login
+        with:
+          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+          ghcr_actor: ${{ github.actor }}
+          ghcr_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync images between registries
+        uses: ./.github/actions/registry-sync
+        with:
+          dockerhub_repo: ${{ env.DOCKERHUB_REPO }}
+          ghcr_repo: ${{ env.GHCR_REPO }}
+          tags: ${{ needs.check-releases.outputs.latest_version }},latest,stable,${{ needs.check-releases.outputs.versions_to_build }}
+
+  # ===========================================================================
+  # Job 4: Promote image to latest or stable
+  # ===========================================================================
+  promote-image:
+    name: Promote Image
+    needs: check-releases
+    if: needs.check-releases.outputs.action_type == 'promote-image'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ github.event.inputs.promote_version }}" ]; then
+            echo "::error::Source version is required for image promotion"
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install skopeo
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+
+      - name: Login to registries
+        uses: ./.github/actions/registry-login
+        with:
+          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+          ghcr_actor: ${{ github.actor }}
+          ghcr_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote image
+        run: |
+          SOURCE="${{ github.event.inputs.promote_version }}"
+          TARGET="${{ github.event.inputs.promote_tag }}"
+
+          echo "Promoting version $SOURCE to $TARGET..."
+
+          # Check source exists
+          if ! skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${SOURCE}" > /dev/null 2>&1; then
+            echo "::error::Source version $SOURCE not found in Docker Hub"
+            exit 1
+          fi
+
+          # Promote on Docker Hub
+          echo "Promoting on Docker Hub..."
+          skopeo copy --all \
+            "docker://${{ env.DOCKERHUB_REPO }}:${SOURCE}" \
+            "docker://${{ env.DOCKERHUB_REPO }}:${TARGET}"
+
+          # Promote on GHCR
+          echo "Promoting on GHCR..."
+          skopeo copy --all \
+            "docker://${{ env.GHCR_REPO }}:${SOURCE}" \
+            "docker://${{ env.GHCR_REPO }}:${TARGET}"
+
+          echo "Successfully promoted $SOURCE to $TARGET on both registries"
+
+          echo "## Image Promotion" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Source | Target | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| $SOURCE | $TARGET | Success |" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # Job 5: Mark stable (5-day rule)
+  # ===========================================================================
+  mark-stable:
+    name: Mark Stable
+    needs: [check-releases, build, sync-registries]
+    if: |
+      always() &&
+      (needs.check-releases.outputs.action_type == 'mark-stable' ||
+       (needs.check-releases.outputs.action_type == 'auto-check' &&
+        needs.check-releases.outputs.should_mark_stable == 'true'))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install skopeo
+        run: sudo apt-get update && sudo apt-get install -y skopeo
+
+      - name: Login to registries
+        uses: ./.github/actions/registry-login
+        with:
+          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+          ghcr_actor: ${{ github.actor }}
+          ghcr_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check and promote to stable
+        run: |
+          STABLE_VERSION="${{ needs.check-releases.outputs.stable_version }}"
+
+          if [ -z "$STABLE_VERSION" ]; then
+            echo "No version eligible for stable promotion"
+            exit 0
+          fi
+
+          echo "Checking if stable tag needs update..."
+
+          # Get digests
+          CURRENT_STABLE=$(skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:stable" 2>/dev/null | jq -r '.Digest' || echo "none")
+          VERSION_DIGEST=$(skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${STABLE_VERSION}" 2>/dev/null | jq -r '.Digest' || echo "none")
+
+          echo "Current stable digest: $CURRENT_STABLE"
+          echo "Version $STABLE_VERSION digest: $VERSION_DIGEST"
+
+          if [ "$CURRENT_STABLE" == "$VERSION_DIGEST" ] && [ "$CURRENT_STABLE" != "none" ]; then
+            echo "Stable tag already points to version $STABLE_VERSION"
+            exit 0
+          fi
+
+          echo "Marking version $STABLE_VERSION as stable..."
+
+          # Promote on Docker Hub
+          skopeo copy --all \
+            "docker://${{ env.DOCKERHUB_REPO }}:${STABLE_VERSION}" \
+            "docker://${{ env.DOCKERHUB_REPO }}:stable"
+
+          # Promote on GHCR
+          skopeo copy --all \
+            "docker://${{ env.GHCR_REPO }}:${STABLE_VERSION}" \
+            "docker://${{ env.GHCR_REPO }}:stable"
+
+          echo "Successfully marked $STABLE_VERSION as stable"
+
+          echo "## Stable Promotion" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version **$STABLE_VERSION** has been marked as **stable**" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # Job 6: Update repository metadata
+  # ===========================================================================
+  update-metadata:
+    name: Update Metadata
+    needs: [check-releases, build, sync-registries, mark-stable]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update build metadata
+        run: |
+          LATEST_VERSION="${{ needs.check-releases.outputs.latest_version }}"
+          CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Update tag file
+          echo "$LATEST_VERSION" > resources/tag
+
+          # Update build timestamp
+          echo "Last successful build: $CURRENT_TIME" > resources/build-timestamp
+
+          # Update version file (underscore format)
+          VERSION_UNDERSCORE="${LATEST_VERSION//./_}"
+          mkdir -p resources/build_data
+          echo "$VERSION_UNDERSCORE" > resources/build_data/version
+
+          echo "Updated metadata files"
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add resources/tag resources/build-timestamp resources/build_data/version 2>/dev/null || true
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update build metadata
+
+            Version: ${{ needs.check-releases.outputs.latest_version }}
+            Built: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+            [skip ci]"
+            git push
+          fi
