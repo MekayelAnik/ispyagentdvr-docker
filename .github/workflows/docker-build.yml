@@ -114,7 +114,7 @@ on:
         description: 'Also tag the built image(s) as latest'
         required: false
         type: boolean
-        default: false
+        default: true
 
       run_security_scan:
         description: 'Run Trivy security vulnerability scan'
