@@ -287,9 +287,9 @@ jobs:
           curl -s "${{ env.RELEASE_URL }}" -o /tmp/releases.html
 
           # Parse the HTML table to extract versions and dates
-          # Using more robust parsing with awk
-          grep -oP '(?<=<td>)\d+\.\d+\.\d+\.\d+(?=</td>)' /tmp/releases.html | head -20 > /tmp/versions.txt
-          grep -oP '(?<=<td>)\d{1,2}/\d{1,2}/\d{4}(?=</td>)' /tmp/releases.html | head -20 > /tmp/dates.txt
+          # Note: HTML uses <td valign="top"> so we match full td tag and strip with sed
+          grep -oP '<td[^>]*>\d+\.\d+\.\d+\.\d+</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -20 > /tmp/versions.txt
+          grep -oP '<td[^>]*>\d{1,2}/\d{1,2}/\d{4}</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -20 > /tmp/dates.txt
 
           # Create combined output
           paste -d'|' /tmp/versions.txt /tmp/dates.txt > /tmp/releases.txt
