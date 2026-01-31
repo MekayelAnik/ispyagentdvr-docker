@@ -6,11 +6,20 @@
     "docker:pinDigests",
     "helpers:pinGitHubActionDigests"
   ],
-  "labels": ["dependencies", "automated"],
-  "assignees": ["mekayelanik"],
-  "reviewers": ["mekayelanik"],
+  "labels": [
+    "dependencies",
+    "automated"
+  ],
+  "assignees": [
+    "mekayelanik"
+  ],
+  "reviewers": [
+    "mekayelanik"
+  ],
   "timezone": "Asia/Dhaka",
-  "schedule": ["before 6am on monday"],
+  "schedule": [
+    "before 6am on monday"
+  ],
   "prConcurrentLimit": 10,
   "prHourlyLimit": 5,
   "minimumReleaseAge": "3 days",
@@ -19,7 +28,12 @@
   "packageRules": [
     {
       "description": "Automerge minor and patch updates for stable packages",
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
       "matchCurrentVersion": "!/^0/",
       "automerge": true,
       "automergeType": "pr",
@@ -27,39 +41,78 @@
     },
     {
       "description": "Security-related packages - high priority",
-      "matchManagers": ["github-actions"],
-      "matchPackagePatterns": ["^aquasecurity/", "^securego/", "^github/codeql"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "security-actions",
       "prPriority": 10,
-      "labels": ["dependencies", "github-actions", "security", "priority"]
+      "labels": [
+        "dependencies",
+        "github-actions",
+        "security",
+        "priority"
+      ],
+      "matchPackageNames": [
+        "/^aquasecurity//",
+        "/^securego//",
+        "/^github/codeql/"
+      ]
     },
     {
       "description": "Core GitHub Actions (checkout, setup, upload/download)",
-      "matchManagers": ["github-actions"],
-      "matchPackagePatterns": ["^actions/"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "github-core-actions",
       "prPriority": 5,
-      "labels": ["dependencies", "github-actions"]
+      "labels": [
+        "dependencies",
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "/^actions//"
+      ]
     },
     {
       "description": "Docker ecosystem actions",
-      "matchManagers": ["github-actions"],
-      "matchPackagePatterns": ["^docker/"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "docker-actions",
       "prPriority": 3,
-      "labels": ["dependencies", "github-actions", "docker"]
+      "labels": [
+        "dependencies",
+        "github-actions",
+        "docker"
+      ],
+      "matchPackageNames": [
+        "/^docker//"
+      ]
     },
     {
       "description": "All other GitHub Actions",
-      "matchManagers": ["github-actions"],
-      "excludePackagePatterns": ["^actions/", "^docker/", "^aquasecurity/", "^securego/", "^github/codeql"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "other-github-actions",
       "prPriority": 1,
-      "labels": ["dependencies", "github-actions"]
+      "labels": [
+        "dependencies",
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "!/^actions//",
+        "!/^docker//",
+        "!/^aquasecurity//",
+        "!/^securego//",
+        "!/^github/codeql/"
+      ]
     }
   ],
   "commitMessagePrefix": "ci: ",
   "commitMessageAction": "update",
   "commitMessageTopic": "{{depName}}",
-  "gitIgnoredAuthors": ["renovate[bot]@users.noreply.github.com"]
+  "gitIgnoredAuthors": [
+    "renovate[bot]@users.noreply.github.com"
+  ]
 }
