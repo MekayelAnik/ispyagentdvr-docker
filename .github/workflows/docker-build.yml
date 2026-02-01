@@ -967,13 +967,15 @@ jobs:
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Ultra-optimized cache configuration with ZSTD compression
+          # Per-architecture cache configuration for better cache hits
+          # Each platform writes to its own cache reference to prevent cache overwriting
           cache-from: |
-            type=gha
-            type=registry,ref=${{ env.GHCR_REPO }}:buildcache
+            type=registry,ref=${{ env.GHCR_REPO }}:buildcache-amd64
+            type=registry,ref=${{ env.GHCR_REPO }}:buildcache-arm64
+            type=registry,ref=${{ env.GHCR_REPO }}:buildcache-armv7
+            type=gha,scope=build-${{ matrix.version }}
           cache-to: |
-            type=gha,mode=max,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }}
-            type=registry,ref=${{ env.GHCR_REPO }}:buildcache,mode=max,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }}
+            type=gha,scope=build-${{ matrix.version }},mode=max,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }}
           # Security attestations
           provenance: mode=max
           sbom: true
