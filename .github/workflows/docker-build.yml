@@ -180,15 +180,17 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TZ: Asia/Dhaka  # Bangladesh Time (UTC+6)
-  DOCKERHUB_REPO: mekayelanik/ispyagentdvr
-  GHCR_REPO: ghcr.io/mekayelanik/ispyagentdvr
-  DEFAULT_PLATFORMS: linux/amd64,linux/arm64,linux/arm/v7
-  BINARY_BASE_URL: https://ispyfiles.azureedge.net/downloads/Agent
-  RELEASE_URL: https://www.ispyconnect.com/producthistory.aspx?productid=27
-  DEFAULT_BASE_IMAGE: mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-jellyfin-ffmpeg-7.1.3-1
+  # Configuration sourced from repository variables (Settings → Secrets and variables → Actions → Variables)
+  # Fallback values used if variables are not set
+  TZ: ${{ vars.TZ || 'Asia/Dhaka' }}
+  DOCKERHUB_REPO: ${{ vars.DOCKERHUB_REPO || 'mekayelanik/ispyagentdvr' }}
+  GHCR_REPO: ${{ vars.GHCR_REPO || 'ghcr.io/mekayelanik/ispyagentdvr' }}
+  DEFAULT_PLATFORMS: ${{ vars.DEFAULT_PLATFORMS || 'linux/amd64,linux/arm64,linux/arm/v7' }}
+  BINARY_BASE_URL: ${{ vars.BINARY_BASE_URL || 'https://ispyfiles.azureedge.net/downloads/Agent' }}
+  RELEASE_URL: ${{ vars.RELEASE_URL || 'https://www.ispyconnect.com/producthistory.aspx?productid=27' }}
+  DEFAULT_BASE_IMAGE: ${{ vars.DEFAULT_BASE_IMAGE || 'mekayelanik/ispyagentdvr-base-image:ispyagentdvr-latest' }}
   # Base image update check: set to 'true' to enable automatic rebuilds when base image changes
-  UPDATE_BASE_IMAGE_ENABLED: 'false'
+  UPDATE_BASE_IMAGE_ENABLED: ${{ vars.UPDATE_BASE_IMAGE_ENABLED || 'false' }}
 
 jobs:
   # ===========================================================================
