@@ -795,6 +795,9 @@ jobs:
     needs: check-releases
     if: needs.check-releases.outputs.should_build == 'true' && needs.check-releases.outputs.build_matrix != ''
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     # Prevent building the same version+platform concurrently
     concurrency:
       group: build-${{ matrix.version }}-${{ matrix.platform_slug }}
@@ -1027,6 +1030,9 @@ jobs:
     name: Merge Manifest ${{ matrix.version }}
     needs: [check-releases, build-platform]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
