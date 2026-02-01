@@ -1137,9 +1137,23 @@ jobs:
           echo "Sources: $SOURCES"
           echo "Tags: ${{ steps.tags.outputs.dockerhub_tags }}"
 
-          docker buildx imagetools create \
-            ${{ steps.tags.outputs.dockerhub_tags }} \
-            $SOURCES
+          # Retry logic for transient network failures
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt of 3..."
+            if docker buildx imagetools create \
+              ${{ steps.tags.outputs.dockerhub_tags }} \
+              $SOURCES; then
+              echo "Docker Hub manifest created successfully"
+              break
+            fi
+            if [ $attempt -lt 3 ]; then
+              echo "Retrying in 10 seconds..."
+              sleep 10
+            else
+              echo "Failed after 3 attempts"
+              exit 1
+            fi
+          done
 
       - name: Create and push multi-arch manifest (GHCR)
         if: github.event.inputs.push_to_ghcr != 'false'
@@ -1155,9 +1169,23 @@ jobs:
           echo "Sources: $SOURCES"
           echo "Tags: ${{ steps.tags.outputs.ghcr_tags }}"
 
-          docker buildx imagetools create \
-            ${{ steps.tags.outputs.ghcr_tags }} \
-            $SOURCES
+          # Retry logic for transient network failures (GHCR can be flaky)
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt of 3..."
+            if docker buildx imagetools create \
+              ${{ steps.tags.outputs.ghcr_tags }} \
+              $SOURCES; then
+              echo "GHCR manifest created successfully"
+              break
+            fi
+            if [ $attempt -lt 3 ]; then
+              echo "Retrying in 15 seconds..."
+              sleep 15
+            else
+              echo "Failed after 3 attempts"
+              exit 1
+            fi
+          done
 
       - name: Run Trivy vulnerability scanner
         if: github.event.inputs.run_security_scan != 'false'
