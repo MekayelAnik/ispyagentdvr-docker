@@ -249,29 +249,42 @@ jobs:
 
       - name: Resolve base image
         id: resolve-base-image
+        env:
+          DEFAULT_IMAGE: ${{ env.DEFAULT_BASE_IMAGE }}
         run: |
           INPUT_BASE="${{ github.event.inputs.base_image }}"
           CUSTOM_BASE="${{ github.event.inputs.custom_base_image }}"
 
+          # Determine base image based on input
           case "$INPUT_BASE" in
             "custom")
               if [ -n "$CUSTOM_BASE" ]; then
-                echo "image=$CUSTOM_BASE" >> $GITHUB_OUTPUT
+                RESOLVED_IMAGE="$CUSTOM_BASE"
               else
                 echo "::warning::Custom base image selected but no URL provided, using default"
-                echo "image=${{ env.DEFAULT_BASE_IMAGE }}" >> $GITHUB_OUTPUT
+                RESOLVED_IMAGE="$DEFAULT_IMAGE"
               fi
               ;;
             "trixie-slim-default-ffmpeg")
-              echo "image=mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-default-ffmpeg" >> $GITHUB_OUTPUT
+              RESOLVED_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-default-ffmpeg"
               ;;
             "bookworm-slim-vlc-jellyfin-ffmpeg")
-              echo "image=mekayelanik/ispyagentdvr-base-image:ispyagentdvr-bookworm-slim-vlc-jellyfin-ffmpeg" >> $GITHUB_OUTPUT
+              RESOLVED_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-bookworm-slim-vlc-jellyfin-ffmpeg"
               ;;
             *)
-              echo "image=${{ env.DEFAULT_BASE_IMAGE }}" >> $GITHUB_OUTPUT
+              # Default for schedule, repository_dispatch, or 'default (latest)' selection
+              RESOLVED_IMAGE="$DEFAULT_IMAGE"
               ;;
           esac
+
+          # Validate and output - ensure never empty
+          if [ -z "$RESOLVED_IMAGE" ]; then
+            echo "::warning::Resolved image was empty, using hardcoded default"
+            RESOLVED_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-jellyfin-ffmpeg-7.1.3-1"
+          fi
+
+          echo "Resolved base image: $RESOLVED_IMAGE"
+          echo "image=$RESOLVED_IMAGE" >> $GITHUB_OUTPUT
 
       - name: Install dependencies
         run: |
@@ -795,10 +808,23 @@ jobs:
           push_to_ghcr: ${{ github.event.inputs.push_to_ghcr || 'true' }}
 
       - name: Prepare build context
+        id: prepare
+        env:
+          DEFAULT_IMAGE: ${{ env.DEFAULT_BASE_IMAGE }}
         run: |
           VERSION="${{ matrix.version }}"
           VERSION_UNDERSCORE="${VERSION//./_}"
           BASE_IMAGE="${{ needs.check-releases.outputs.base_image }}"
+
+          # Ensure BASE_IMAGE is never empty
+          if [ -z "$BASE_IMAGE" ]; then
+            echo "::warning::Base image from check-releases was empty, using default"
+            BASE_IMAGE="$DEFAULT_IMAGE"
+          fi
+          if [ -z "$BASE_IMAGE" ]; then
+            echo "::warning::Default image env was also empty, using hardcoded fallback"
+            BASE_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-jellyfin-ffmpeg-7.1.3-1"
+          fi
 
           # Create build_data directory
           mkdir -p resources/build_data
@@ -815,6 +841,9 @@ jobs:
           echo "Base Image: $BASE_IMAGE"
           echo "Binary URL: ${{ env.BINARY_BASE_URL }}"
 
+          # Output validated base image for subsequent steps
+          echo "base_image=$BASE_IMAGE" >> $GITHUB_OUTPUT
+
           # Generate Dockerfile
           bash DockerfileModifier.sh
 
@@ -824,8 +853,14 @@ jobs:
 
       - name: Get base image digest
         id: base-digest
+        env:
+          DEFAULT_IMAGE: ${{ env.DEFAULT_BASE_IMAGE }}
         run: |
           BASE_IMAGE="${{ needs.check-releases.outputs.base_image }}"
+          # Ensure BASE_IMAGE is never empty
+          if [ -z "$BASE_IMAGE" ]; then
+            BASE_IMAGE="${DEFAULT_IMAGE:-mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-jellyfin-ffmpeg-7.1.3-1}"
+          fi
           BASE_DIGEST=$(skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Digest' || echo "unknown")
           echo "digest=$BASE_DIGEST" >> $GITHUB_OUTPUT
           echo "Base image digest: $BASE_DIGEST"
@@ -911,7 +946,7 @@ jobs:
             org.opencontainers.image.version=${{ matrix.version }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.documentation=https://www.ispyconnect.com/docs/agent/about
-            org.opencontainers.image.base.name=${{ needs.check-releases.outputs.base_image }}
+            org.opencontainers.image.base.name=${{ steps.prepare.outputs.base_image }}
             org.opencontainers.image.base.digest=${{ steps.base-digest.outputs.digest }}
             org.opencontainers.image.revision=${{ github.sha }}
             ispyagentdvr.release.beta=${{ steps.tags.outputs.is_beta }}
@@ -938,7 +973,7 @@ jobs:
           sbom: true
           # Build arguments
           build-args: |
-            BASE_IMAGE=${{ needs.check-releases.outputs.base_image }}
+            BASE_IMAGE=${{ steps.prepare.outputs.base_image }}
             AGENTDVR_VERSION=${{ matrix.version }}
             BUILDKIT_INLINE_CACHE=1
           # Output optimizations: ZSTD compression (level from input, default 22), OCI compatibility, force re-compression
@@ -984,7 +1019,7 @@ jobs:
           echo "| Digest | ${{ steps.build-push.outputs.digest }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Image ID | ${{ steps.build-push.outputs.imageid }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Platforms | ${{ needs.check-releases.outputs.platforms }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Base Image | ${{ needs.check-releases.outputs.base_image }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Base Image | ${{ steps.prepare.outputs.base_image }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ZSTD Compression | Level ${{ needs.check-releases.outputs.compression_level }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Tags" >> $GITHUB_STEP_SUMMARY
