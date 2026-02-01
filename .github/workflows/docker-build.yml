@@ -282,8 +282,8 @@ jobs:
 
           # Validate and output - ensure never empty
           if [ -z "$RESOLVED_IMAGE" ]; then
-            echo "::warning::Resolved image was empty, using hardcoded default"
-            RESOLVED_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-jellyfin-ffmpeg-7.1.3-1"
+            echo "::warning::Resolved image was empty, using default from env"
+            RESOLVED_IMAGE="$DEFAULT_IMAGE"
           fi
 
           echo "Resolved base image: $RESOLVED_IMAGE"
@@ -863,8 +863,8 @@ jobs:
             BASE_IMAGE="$DEFAULT_IMAGE"
           fi
           if [ -z "$BASE_IMAGE" ]; then
-            echo "::warning::Default image env was also empty, using hardcoded fallback"
-            BASE_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-jellyfin-ffmpeg-7.1.3-1"
+            echo "::warning::Default image env was also empty, using env fallback"
+            BASE_IMAGE="$DEFAULT_IMAGE"
           fi
 
           # Create build_data directory
@@ -901,7 +901,7 @@ jobs:
           BASE_IMAGE="${{ needs.check-releases.outputs.base_image }}"
           # Ensure BASE_IMAGE is never empty
           if [ -z "$BASE_IMAGE" ]; then
-            BASE_IMAGE="${DEFAULT_IMAGE:-mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-jellyfin-ffmpeg-7.1.3-1}"
+            BASE_IMAGE="$DEFAULT_IMAGE"
           fi
           BASE_DIGEST=$(skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Digest' || echo "unknown")
           echo "digest=$BASE_DIGEST" >> $GITHUB_OUTPUT
