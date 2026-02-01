@@ -34,6 +34,12 @@ on:
     - cron: '*/30 * * * *'
 
   # =========================================================================
+  # EXTERNAL TRIGGER: For reliable scheduling via cron-job.org or similar
+  # =========================================================================
+  repository_dispatch:
+    types: [scheduled-build]
+
+  # =========================================================================
   # MANUAL TRIGGER: With detailed input options
   # =========================================================================
   workflow_dispatch:
@@ -213,9 +219,9 @@ jobs:
       - name: Set action type
         id: set-action
         run: |
-          if [ "${{ github.event_name }}" == "schedule" ]; then
+          if [ "${{ github.event_name }}" == "schedule" ] || [ "${{ github.event_name }}" == "repository_dispatch" ]; then
             echo "action=auto-check" >> $GITHUB_OUTPUT
-            echo "Running scheduled auto-check..."
+            echo "Running scheduled auto-check (trigger: ${{ github.event_name }})..."
           else
             echo "action=${{ github.event.inputs.action }}" >> $GITHUB_OUTPUT
             echo "Running manual action: ${{ github.event.inputs.action }}"
