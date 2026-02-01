@@ -213,6 +213,7 @@ jobs:
       base_image_updated: ${{ steps.check-base-image.outputs.updated }}
       platforms: ${{ steps.set-platforms.outputs.platforms }}
       compression_level: ${{ steps.set-compression.outputs.level }}
+      build_matrix: ${{ steps.generate-matrix.outputs.matrix }}
 
     steps:
       - name: Checkout repository
@@ -729,6 +730,39 @@ jobs:
               ;;
           esac
 
+      - name: Generate build matrix
+        id: generate-matrix
+        run: |
+          VERSIONS='${{ steps.determine-versions.outputs.versions_json }}'
+          BETA_VERSIONS='${{ steps.fetch-releases.outputs.beta_versions }}'
+          
+          # If no versions to build, output empty matrix
+          if [ "$VERSIONS" == "[]" ] || [ -z "$VERSIONS" ]; then
+            echo "matrix=[]" >> $GITHUB_OUTPUT
+            echo "No versions to build, empty matrix"
+            exit 0
+          fi
+          
+          # Generate combined matrix: [{version, platform, platform_slug, is_beta}, ...]
+          MATRIX=$(echo "$VERSIONS" | jq -c --argjson betas "$BETA_VERSIONS" '
+            . as $versions |
+            ["linux/amd64", "linux/arm64", "linux/arm/v7"] as $platforms |
+            [
+              $versions[] as $v |
+              $platforms[] as $p |
+              {
+                version: $v,
+                platform: $p,
+                platform_slug: ($p | gsub("/"; "-")),
+                is_beta: (if $betas[$v] == true then "true" else "false" end)
+              }
+            ]
+          ')
+          
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "Generated build matrix with $(echo $MATRIX | jq length) entries"
+          echo "$MATRIX" | jq .
+
       - name: Summary
         run: |
           echo "## Release Check Summary" >> $GITHUB_STEP_SUMMARY
@@ -747,22 +781,22 @@ jobs:
           echo "| ZSTD Compression | Level ${{ steps.set-compression.outputs.level }} |" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
-  # Job 2: Build Docker images (matrix strategy for multiple versions)
+  # Job 2: Build Docker images per platform (Split Build Strategy)
   # ===========================================================================
-  build:
-    name: Build ${{ matrix.version }}
+  build-platform:
+    name: Build ${{ matrix.version }} (${{ matrix.platform_slug }})
     needs: check-releases
-    if: needs.check-releases.outputs.should_build == 'true' && needs.check-releases.outputs.versions_to_build != ''
+    if: needs.check-releases.outputs.should_build == 'true' && needs.check-releases.outputs.build_matrix != ''
     runs-on: ubuntu-latest
-    # Prevent building the same version concurrently
+    # Prevent building the same version+platform concurrently
     concurrency:
-      group: build-version-${{ matrix.version }}
+      group: build-${{ matrix.version }}-${{ matrix.platform_slug }}
       cancel-in-progress: false
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 6
       matrix:
-        version: ${{ fromJson(needs.check-releases.outputs.versions_json) }}
+        include: ${{ fromJson(needs.check-releases.outputs.build_matrix) }}
 
     steps:
       - name: Checkout repository
@@ -775,10 +809,11 @@ jobs:
           sudo apt-get clean
           df -h
 
-      - name: Set up QEMU for multi-platform builds
+      - name: Set up QEMU for cross-platform builds
+        if: matrix.platform != 'linux/amd64'
         uses: docker/setup-qemu-action@v3
         with:
-          platforms: arm64,arm
+          platforms: ${{ matrix.platform }}
 
       - name: Set up Docker Buildx (ultra-optimized)
         uses: docker/setup-buildx-action@v3
@@ -844,6 +879,7 @@ jobs:
           echo "=== Build Configuration ==="
           echo "Version: $VERSION"
           echo "Version (underscore): $VERSION_UNDERSCORE"
+          echo "Platform: ${{ matrix.platform }}"
           echo "Base Image: $BASE_IMAGE"
           echo "Binary URL: ${{ env.BINARY_BASE_URL }}"
 
@@ -871,12 +907,147 @@ jobs:
           echo "digest=$BASE_DIGEST" >> $GITHUB_OUTPUT
           echo "Base image digest: $BASE_DIGEST"
 
+      - name: Determine cache reference
+        id: cache-ref
+        run: |
+          # Map platform to cache tag
+          case "${{ matrix.platform }}" in
+            "linux/amd64") CACHE_TAG="buildcache-amd64" ;;
+            "linux/arm64") CACHE_TAG="buildcache-arm64" ;;
+            "linux/arm/v7") CACHE_TAG="buildcache-armv7" ;;
+            *) CACHE_TAG="buildcache-${{ matrix.platform_slug }}" ;;
+          esac
+          echo "cache_tag=$CACHE_TAG" >> $GITHUB_OUTPUT
+          echo "Using cache reference: $CACHE_TAG"
+
+      - name: Generate Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.DOCKERHUB_REPO }}
+            ${{ env.GHCR_REPO }}
+          labels: |
+            org.opencontainers.image.title=iSpy Agent DVR
+            org.opencontainers.image.description=Agent DVR - Professional video surveillance software for Linux, Windows and macOS
+            org.opencontainers.image.vendor=mekayelanik
+            org.opencontainers.image.version=${{ matrix.version }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.documentation=https://www.ispyconnect.com/docs/agent/about
+            org.opencontainers.image.base.name=${{ steps.prepare.outputs.base_image }}
+            org.opencontainers.image.base.digest=${{ steps.base-digest.outputs.digest }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            ispyagentdvr.release.beta=${{ matrix.is_beta }}
+
+      - name: Build and push by digest
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.ispyagentdvr-docker
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Per-architecture cache configuration
+          cache-from: |
+            type=registry,ref=${{ env.GHCR_REPO }}:${{ steps.cache-ref.outputs.cache_tag }}
+            type=gha,scope=build-${{ matrix.version }}-${{ matrix.platform_slug }}
+          cache-to: |
+            type=registry,ref=${{ env.GHCR_REPO }}:${{ steps.cache-ref.outputs.cache_tag }},mode=max,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }}
+            type=gha,scope=build-${{ matrix.version }}-${{ matrix.platform_slug }},mode=max,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }}
+          # Security attestations
+          provenance: mode=max
+          sbom: true
+          # Build arguments
+          build-args: |
+            BASE_IMAGE=${{ steps.prepare.outputs.base_image }}
+            AGENTDVR_VERSION=${{ matrix.version }}
+            BUILDKIT_INLINE_CACHE=1
+          # Push by digest - no tags, outputs digest for manifest creation
+          outputs: type=image,name=${{ env.DOCKERHUB_REPO }},push-by-digest=true,name-canonical=true,push=true,oci-mediatypes=true,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }},force-compression=true
+          # Allow network access during build
+          allow: network.host
+          # Use BuildKit features
+          build-contexts: |
+            resources=./resources
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build-push.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+          echo "Exported digest: $digest"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: digest-${{ matrix.version }}-${{ matrix.platform_slug }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Platform build summary
+        run: |
+          echo "## 🔧 Platform Build: ${{ matrix.version }} (${{ matrix.platform }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${{ matrix.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | ${{ matrix.platform }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Digest | \`${{ steps.build-push.outputs.digest }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Image ID | ${{ steps.build-push.outputs.imageid }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Base Image | ${{ steps.prepare.outputs.base_image }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ZSTD Compression | Level ${{ needs.check-releases.outputs.compression_level }} |" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # Job 2b: Merge platform manifests into multi-arch images
+  # ===========================================================================
+  merge-manifest:
+    name: Merge Manifest ${{ matrix.version }}
+    needs: [check-releases, build-platform]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJson(needs.check-releases.outputs.versions_json) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to registries
+        uses: ./.github/actions/registry-login
+        with:
+          dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
+          ghcr_actor: ${{ github.actor }}
+          ghcr_token: ${{ secrets.GITHUB_TOKEN }}
+          push_to_dockerhub: ${{ github.event.inputs.push_to_dockerhub || 'true' }}
+          push_to_ghcr: ${{ github.event.inputs.push_to_ghcr || 'true' }}
+
+      - name: Download all digests for version
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-${{ matrix.version }}-*
+          merge-multiple: true
+
+      - name: List downloaded digests
+        run: |
+          echo "Downloaded digests for ${{ matrix.version }}:"
+          ls -la /tmp/digests/
+          echo "Digest files:"
+          for f in /tmp/digests/*; do
+            echo "  - sha256:$(basename $f)"
+          done
+
       - name: Determine image tags
         id: tags
         run: |
           VERSION="${{ matrix.version }}"
           LATEST_VERSION="${{ needs.check-releases.outputs.latest_version }}"
-          LATEST_IS_BETA="${{ needs.check-releases.outputs.latest_is_beta }}"
           BETA_VERSIONS='${{ needs.check-releases.outputs.beta_versions }}'
           TAG_AS_LATEST="${{ github.event.inputs.tag_as_latest }}"
           PUSH_DOCKERHUB="${{ github.event.inputs.push_to_dockerhub }}"
@@ -891,106 +1062,80 @@ jobs:
 
           # Generate tags based on beta status
           if [ "$IS_BETA" == "true" ]; then
-            # Beta version tags: VERSION-beta, VERSION-beta-DATE, beta (rolling)
             VERSION_TAG="${VERSION}-beta"
             VERSION_DATE_TAG="${VERSION}-beta-${DATE_TAG}"
             ROLLING_TAG="beta"
           else
-            # Non-beta version tags: VERSION, VERSION-DATE, latest (rolling)
             VERSION_TAG="${VERSION}"
             VERSION_DATE_TAG="${VERSION}-${DATE_TAG}"
             ROLLING_TAG="latest"
           fi
 
-          TAGS=""
+          # Build tag lists for imagetools
+          DOCKERHUB_TAGS=""
+          GHCR_TAGS=""
 
-          # Docker Hub tags
           if [ "$PUSH_DOCKERHUB" != "false" ]; then
-            TAGS="${{ env.DOCKERHUB_REPO }}:${VERSION_TAG}"
-            TAGS="$TAGS,${{ env.DOCKERHUB_REPO }}:${VERSION_DATE_TAG}"
-            # Add rolling tag (beta or latest) only if this is the latest version or tag_as_latest is true
+            DOCKERHUB_TAGS="-t ${{ env.DOCKERHUB_REPO }}:${VERSION_TAG}"
+            DOCKERHUB_TAGS="$DOCKERHUB_TAGS -t ${{ env.DOCKERHUB_REPO }}:${VERSION_DATE_TAG}"
             if [ "$VERSION" == "$LATEST_VERSION" ] || [ "$TAG_AS_LATEST" == "true" ]; then
-              TAGS="$TAGS,${{ env.DOCKERHUB_REPO }}:${ROLLING_TAG}"
+              DOCKERHUB_TAGS="$DOCKERHUB_TAGS -t ${{ env.DOCKERHUB_REPO }}:${ROLLING_TAG}"
             fi
           fi
 
-          # GHCR tags
           if [ "$PUSH_GHCR" != "false" ]; then
-            if [ -n "$TAGS" ]; then
-              TAGS="$TAGS,${{ env.GHCR_REPO }}:${VERSION_TAG}"
-            else
-              TAGS="${{ env.GHCR_REPO }}:${VERSION_TAG}"
-            fi
-            TAGS="$TAGS,${{ env.GHCR_REPO }}:${VERSION_DATE_TAG}"
-            # Add rolling tag (beta or latest) only if this is the latest version or tag_as_latest is true
+            GHCR_TAGS="-t ${{ env.GHCR_REPO }}:${VERSION_TAG}"
+            GHCR_TAGS="$GHCR_TAGS -t ${{ env.GHCR_REPO }}:${VERSION_DATE_TAG}"
             if [ "$VERSION" == "$LATEST_VERSION" ] || [ "$TAG_AS_LATEST" == "true" ]; then
-              TAGS="$TAGS,${{ env.GHCR_REPO }}:${ROLLING_TAG}"
+              GHCR_TAGS="$GHCR_TAGS -t ${{ env.GHCR_REPO }}:${ROLLING_TAG}"
             fi
           fi
 
-          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "dockerhub_tags=$DOCKERHUB_TAGS" >> $GITHUB_OUTPUT
+          echo "ghcr_tags=$GHCR_TAGS" >> $GITHUB_OUTPUT
           echo "date_tag=$DATE_TAG" >> $GITHUB_OUTPUT
           echo "is_beta=$IS_BETA" >> $GITHUB_OUTPUT
           echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
-          echo "Image tags: $TAGS"
+          echo "rolling_tag=$ROLLING_TAG" >> $GITHUB_OUTPUT
 
-      - name: Generate Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.DOCKERHUB_REPO }}
-            ${{ env.GHCR_REPO }}
-          tags: |
-            type=raw,value=${{ steps.tags.outputs.version_tag }}
-            type=raw,value=${{ steps.tags.outputs.version_tag }}-${{ steps.tags.outputs.date_tag }}
-            type=raw,value=${{ steps.tags.outputs.is_beta == 'true' && 'beta' || 'latest' }},enable=${{ matrix.version == needs.check-releases.outputs.latest_version || github.event.inputs.tag_as_latest == 'true' }}
-          labels: |
-            org.opencontainers.image.title=iSpy Agent DVR
-            org.opencontainers.image.description=Agent DVR - Professional video surveillance software for Linux, Windows and macOS
-            org.opencontainers.image.vendor=mekayelanik
-            org.opencontainers.image.version=${{ matrix.version }}
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.documentation=https://www.ispyconnect.com/docs/agent/about
-            org.opencontainers.image.base.name=${{ steps.prepare.outputs.base_image }}
-            org.opencontainers.image.base.digest=${{ steps.base-digest.outputs.digest }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            ispyagentdvr.release.beta=${{ steps.tags.outputs.is_beta }}
+          echo "Docker Hub tags: $DOCKERHUB_TAGS"
+          echo "GHCR tags: $GHCR_TAGS"
 
-      - name: Build and push Docker image
-        id: build-push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.ispyagentdvr-docker
-          platforms: ${{ needs.check-releases.outputs.platforms }}
-          push: true
-          tags: ${{ steps.tags.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # Per-architecture cache configuration for better cache hits
-          # Each platform writes to its own cache reference to prevent cache overwriting
-          cache-from: |
-            type=registry,ref=${{ env.GHCR_REPO }}:buildcache-amd64
-            type=registry,ref=${{ env.GHCR_REPO }}:buildcache-arm64
-            type=registry,ref=${{ env.GHCR_REPO }}:buildcache-armv7
-            type=gha,scope=build-${{ matrix.version }}
-          cache-to: |
-            type=gha,scope=build-${{ matrix.version }},mode=max,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }}
-          # Security attestations
-          provenance: mode=max
-          sbom: true
-          # Build arguments
-          build-args: |
-            BASE_IMAGE=${{ steps.prepare.outputs.base_image }}
-            AGENTDVR_VERSION=${{ matrix.version }}
-            BUILDKIT_INLINE_CACHE=1
-          # Output optimizations: ZSTD compression (level from input, default 22), OCI compatibility, force re-compression
-          outputs: type=image,oci-mediatypes=true,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }},force-compression=true
-          # Allow network access during build
-          allow: network.host
-          # Use BuildKit features
-          build-contexts: |
-            resources=./resources
+      - name: Create and push multi-arch manifest (Docker Hub)
+        if: github.event.inputs.push_to_dockerhub != 'false'
+        run: |
+          # Build source images list from digests
+          SOURCES=""
+          for digest_file in /tmp/digests/*; do
+            digest="sha256:$(basename $digest_file)"
+            SOURCES="$SOURCES ${{ env.DOCKERHUB_REPO }}@${digest}"
+          done
+
+          echo "Creating multi-arch manifest for Docker Hub..."
+          echo "Sources: $SOURCES"
+          echo "Tags: ${{ steps.tags.outputs.dockerhub_tags }}"
+
+          docker buildx imagetools create \
+            ${{ steps.tags.outputs.dockerhub_tags }} \
+            $SOURCES
+
+      - name: Create and push multi-arch manifest (GHCR)
+        if: github.event.inputs.push_to_ghcr != 'false'
+        run: |
+          # Build source images list from digests
+          SOURCES=""
+          for digest_file in /tmp/digests/*; do
+            digest="sha256:$(basename $digest_file)"
+            SOURCES="$SOURCES ${{ env.DOCKERHUB_REPO }}@${digest}"
+          done
+
+          echo "Creating multi-arch manifest for GHCR..."
+          echo "Sources: $SOURCES"
+          echo "Tags: ${{ steps.tags.outputs.ghcr_tags }}"
+
+          docker buildx imagetools create \
+            ${{ steps.tags.outputs.ghcr_tags }} \
+            $SOURCES
 
       - name: Run Trivy vulnerability scanner
         if: github.event.inputs.run_security_scan != 'false'
@@ -1024,16 +1169,18 @@ jobs:
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Version | ${{ matrix.version }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Release Type | ${{ steps.tags.outputs.is_beta == 'true' && '🧪 Beta' || '📦 Stable' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Digest | ${{ steps.build-push.outputs.digest }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Image ID | ${{ steps.build-push.outputs.imageid }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Platforms | ${{ needs.check-releases.outputs.platforms }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Base Image | ${{ steps.prepare.outputs.base_image }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ZSTD Compression | Level ${{ needs.check-releases.outputs.compression_level }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Tags" >> $GITHUB_STEP_SUMMARY
+          echo "### Tags Applied" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.tags.outputs.tags }}" | tr ',' '\n' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.tags.outputs.dockerhub_tags }} ${{ steps.tags.outputs.ghcr_tags }}" | tr ' ' '\n' | grep -v '^-t$' | grep -v '^$' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Platform Digests" >> $GITHUB_STEP_SUMMARY
+          for f in /tmp/digests/*; do
+            echo "- \`sha256:$(basename $f)\`" >> $GITHUB_STEP_SUMMARY
+          done
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
@@ -1049,11 +1196,11 @@ jobs:
   # ===========================================================================
   sync-registries:
     name: Sync Registries
-    needs: [check-releases, build]
+    needs: [check-releases, merge-manifest]
     if: |
       always() &&
       (needs.check-releases.outputs.action_type == 'sync-registries' ||
-       (needs.check-releases.outputs.action_type == 'auto-check' && needs.build.result == 'success'))
+       (needs.check-releases.outputs.action_type == 'auto-check' && needs.merge-manifest.result == 'success'))
     runs-on: ubuntu-latest
 
     steps:
@@ -1147,7 +1294,7 @@ jobs:
   # ===========================================================================
   mark-stable:
     name: Mark Stable
-    needs: [check-releases, build, sync-registries]
+    needs: [check-releases, merge-manifest, sync-registries]
     if: |
       always() &&
       (needs.check-releases.outputs.action_type == 'mark-stable' ||
@@ -1216,8 +1363,8 @@ jobs:
   # ===========================================================================
   update-metadata:
     name: Update Metadata
-    needs: [check-releases, build, sync-registries, mark-stable]
-    if: always() && needs.build.result == 'success'
+    needs: [check-releases, merge-manifest, sync-registries, mark-stable]
+    if: always() && needs.merge-manifest.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
