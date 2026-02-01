@@ -2,7 +2,7 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:best-practices",
-    "schedule:weekly"
+    ":configMigration"
   ],
   "labels": [
     "dependencies",
@@ -20,9 +20,16 @@
   ],
   "prConcurrentLimit": 10,
   "prHourlyLimit": 5,
-  "minimumReleaseAge": "3 days",
+  "minimumReleaseAge": "7 days",
   "internalChecksFilter": "strict",
   "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": [
+      "security"
+    ],
+    "minimumReleaseAge": null
+  },
   "packageRules": [
     {
       "description": "Automerge minor and patch updates for stable packages",
@@ -49,9 +56,9 @@
         "priority"
       ],
       "matchPackageNames": [
-        "/^aquasecurity//",
-        "/^securego//",
-        "/^github/codeql/"
+        "/^aquasecurity\\//",
+        "/^securego\\//",
+        "/^github\\/codeql/"
       ]
     },
     {
@@ -66,7 +73,7 @@
         "github-actions"
       ],
       "matchPackageNames": [
-        "/^actions//"
+        "/^actions\\//"
       ]
     },
     {
@@ -82,7 +89,7 @@
         "docker"
       ],
       "matchPackageNames": [
-        "/^docker//"
+        "/^docker\\//"
       ]
     },
     {
@@ -96,12 +103,12 @@
         "dependencies",
         "github-actions"
       ],
-      "matchPackageNames": [
-        "!/^actions//",
-        "!/^docker//",
-        "!/^aquasecurity//",
-        "!/^securego//",
-        "!/^github/codeql/"
+      "excludePackageNames": [
+        "/^actions\\//",
+        "/^docker\\//",
+        "/^aquasecurity\\//",
+        "/^securego\\//",
+        "/^github\\/codeql/"
       ]
     }
   ],
