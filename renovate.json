@@ -1,9 +1,10 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:best-practices",
+    "config:recommended",
     ":configMigration"
   ],
+  "pinDigests": false,
   "labels": [
     "dependencies",
     "automated"
