@@ -900,8 +900,8 @@ jobs:
           # NOTE: Do NOT create 'publication' file - its existence skips setup in DockerfileModifier.sh
 
           # Create build timestamp (will be copied to /AgentDVR/build-timestamp in container)
-          BUILD_TIME=$(TZ="${{ env.TZ }}" date +"%Y-%m-%d %H:%M:%S %Z")
-          echo "Image built on: $BUILD_TIME | Version: $VERSION | Platform: ${{ matrix.platform }}" > resources/build-timestamp
+          BUILD_TIME=$(TZ="${{ env.TZ }}" date +"%Y-%m-%d %H:%M:%S")
+          echo "Image built on: $BUILD_TIME Bangladesh Standard Time | Version: $VERSION | Platform: ${{ matrix.platform }}" > resources/build-timestamp
 
           echo "=== Build Configuration ==="
           echo "Version: $VERSION"
