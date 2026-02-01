@@ -172,10 +172,12 @@ on:
           - '3'
         default: '22'
 
-# Cancel in-progress runs for the same workflow/version combination
+# Cancel in-progress runs for the same trigger type
+# - For scheduled/repository_dispatch: Only one auto-check runs at a time
+# - For workflow_dispatch: Groups by the versions input to allow different version builds
 concurrency:
-  group: docker-build-${{ github.event.inputs.versions || 'scheduled' }}-${{ github.run_id }}
-  cancel-in-progress: true
+  group: docker-build-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.versions || 'auto-check' }}
+  cancel-in-progress: false
 
 env:
   TZ: Asia/Dhaka  # Bangladesh Time (UTC+6)
@@ -752,6 +754,10 @@ jobs:
     needs: check-releases
     if: needs.check-releases.outputs.should_build == 'true' && needs.check-releases.outputs.versions_to_build != ''
     runs-on: ubuntu-latest
+    # Prevent building the same version concurrently
+    concurrency:
+      group: build-version-${{ matrix.version }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       max-parallel: 3
