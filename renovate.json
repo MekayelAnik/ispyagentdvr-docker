@@ -32,6 +32,14 @@
   },
   "packageRules": [
     {
+      "description": "Disable pin and digest updates - use major versions only",
+      "matchUpdateTypes": [
+        "pin",
+        "digest"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Automerge minor and patch updates for stable packages",
       "matchUpdateTypes": [
         "minor",
