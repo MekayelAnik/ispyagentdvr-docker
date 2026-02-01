@@ -193,6 +193,8 @@ jobs:
       versions_to_build: ${{ steps.determine-versions.outputs.versions }}
       versions_json: ${{ steps.determine-versions.outputs.versions_json }}
       latest_version: ${{ steps.fetch-releases.outputs.latest_version }}
+      latest_is_beta: ${{ steps.fetch-releases.outputs.latest_is_beta }}
+      beta_versions: ${{ steps.fetch-releases.outputs.beta_versions }}
       available_versions: ${{ steps.fetch-releases.outputs.available_versions }}
       should_build: ${{ steps.determine-versions.outputs.should_build }}
       should_mark_stable: ${{ steps.check-stable.outputs.should_mark_stable }}
@@ -291,22 +293,47 @@ jobs:
           grep -oP '<td[^>]*>\d+\.\d+\.\d+\.\d+</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -20 > /tmp/versions.txt
           grep -oP '<td[^>]*>\d{1,2}/\d{1,2}/\d{4}</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -20 > /tmp/dates.txt
 
-          # Create combined output
-          paste -d'|' /tmp/versions.txt /tmp/dates.txt > /tmp/releases.txt
+          # Parse beta status: HTML spans multiple lines, so convert to single-line first
+          # Then extract each row and check if update info contains (Beta):
+          tr '\n' ' ' < /tmp/releases.html | sed 's/  */ /g' > /tmp/releases_oneline.html
 
-          # Get latest version
+          > /tmp/beta_status.txt
+          while IFS= read -r version; do
+            # Extract the row for this version and check for (Beta): in the update info
+            ROW=$(grep -oP "<tr><td[^>]*>${version}</td><td[^>]*>.*?</td><td[^>]*>\d{1,2}/\d{1,2}/\d{4}</td></tr>" /tmp/releases_oneline.html | head -1)
+            if echo "$ROW" | grep -q '(Beta):'; then
+              echo "$version|true" >> /tmp/beta_status.txt
+            else
+              echo "$version|false" >> /tmp/beta_status.txt
+            fi
+          done < /tmp/versions.txt
+
+          # Create combined output (version|date|is_beta)
+          paste -d'|' /tmp/versions.txt /tmp/dates.txt > /tmp/releases_temp.txt
+          paste -d'|' /tmp/releases_temp.txt <(cut -d'|' -f2 /tmp/beta_status.txt) > /tmp/releases.txt
+
+          # Get latest version and its beta status
           LATEST_VERSION=$(head -1 /tmp/versions.txt)
+          LATEST_IS_BETA=$(head -1 /tmp/beta_status.txt | cut -d'|' -f2)
           echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          echo "latest_is_beta=$LATEST_IS_BETA" >> $GITHUB_OUTPUT
+
+          # Create JSON object mapping version -> beta status
+          BETA_VERSIONS=$(awk -F'|' '{printf "\"%s\":%s,", $1, $2}' /tmp/beta_status.txt | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')
+          echo "beta_versions=$BETA_VERSIONS" >> $GITHUB_OUTPUT
 
           # Create JSON array of available versions
           AVAILABLE_VERSIONS=$(cat /tmp/versions.txt | jq -R -s -c 'split("\n") | map(select(length > 0))')
           echo "available_versions=$AVAILABLE_VERSIONS" >> $GITHUB_OUTPUT
 
-          echo "Latest version: $LATEST_VERSION"
+          echo "Latest version: $LATEST_VERSION (beta: $LATEST_IS_BETA)"
           echo "Found $(wc -l < /tmp/versions.txt) versions in release history"
+          echo "Beta versions:"
+          grep '|true$' /tmp/beta_status.txt | cut -d'|' -f1 || echo "  (none in top 20)"
 
           # Save for other steps
           cp /tmp/versions.txt /tmp/available_versions.txt
+          cp /tmp/beta_status.txt /tmp/beta_status_available.txt
 
       - name: Validate requested versions against available versions
         id: validate-versions
@@ -445,16 +472,26 @@ jobs:
           }
 
           LATEST_VERSION="${{ steps.fetch-releases.outputs.latest_version }}"
+          LATEST_IS_BETA="${{ steps.fetch-releases.outputs.latest_is_beta }}"
+
+          # Determine the actual tag to check (beta has -beta suffix)
+          if [ "$LATEST_IS_BETA" == "true" ]; then
+            CHECK_TAG="${LATEST_VERSION}-beta"
+          else
+            CHECK_TAG="${LATEST_VERSION}"
+          fi
+
+          echo "Checking for tag: $CHECK_TAG (beta: $LATEST_IS_BETA)"
 
           # Check Docker Hub
-          DOCKERHUB_STATUS=$(check_image_exists "${{ env.DOCKERHUB_REPO }}" "$LATEST_VERSION")
+          DOCKERHUB_STATUS=$(check_image_exists "${{ env.DOCKERHUB_REPO }}" "$CHECK_TAG")
           echo "dockerhub_latest_status=$DOCKERHUB_STATUS" >> $GITHUB_OUTPUT
 
           # Check GHCR
-          GHCR_STATUS=$(check_image_exists "${{ env.GHCR_REPO }}" "$LATEST_VERSION")
+          GHCR_STATUS=$(check_image_exists "${{ env.GHCR_REPO }}" "$CHECK_TAG")
           echo "ghcr_latest_status=$GHCR_STATUS" >> $GITHUB_OUTPUT
 
-          echo "Latest version ($LATEST_VERSION) - Docker Hub: $DOCKERHUB_STATUS, GHCR: $GHCR_STATUS"
+          echo "Latest version ($LATEST_VERSION, tag: $CHECK_TAG) - Docker Hub: $DOCKERHUB_STATUS, GHCR: $GHCR_STATUS"
 
       - name: Check base image for updates
         id: check-base-image
@@ -518,13 +555,22 @@ jobs:
       - name: Check for 5-day stable promotion
         id: check-stable
         run: |
-          # Read latest release date
+          # Read latest release info (version|date|is_beta)
           LATEST_LINE=$(head -1 /tmp/releases.txt)
-          LATEST_DATE=$(echo "$LATEST_LINE" | cut -d'|' -f2)
           LATEST_VERSION=$(echo "$LATEST_LINE" | cut -d'|' -f1)
+          LATEST_DATE=$(echo "$LATEST_LINE" | cut -d'|' -f2)
+          LATEST_IS_BETA=$(echo "$LATEST_LINE" | cut -d'|' -f3)
 
           if [ -z "$LATEST_DATE" ]; then
             echo "::warning::Could not parse release date"
+            echo "should_mark_stable=false" >> $GITHUB_OUTPUT
+            echo "stable_version=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Beta versions cannot be marked as stable
+          if [ "$LATEST_IS_BETA" == "true" ]; then
+            echo "Latest version $LATEST_VERSION is a BETA release - not eligible for stable"
             echo "should_mark_stable=false" >> $GITHUB_OUTPUT
             echo "stable_version=" >> $GITHUB_OUTPUT
             exit 0
@@ -560,6 +606,7 @@ jobs:
           FORCE_BUILD="${{ github.event.inputs.force_build }}"
           SKIP_EXISTING="${{ github.event.inputs.skip_existing }}"
           LATEST_VERSION="${{ steps.fetch-releases.outputs.latest_version }}"
+          BETA_VERSIONS='${{ steps.fetch-releases.outputs.beta_versions }}'
 
           filter_existing_versions() {
             local versions=$1
@@ -570,12 +617,20 @@ jobs:
               version=$(echo "$version" | xargs)
 
               if [ "$SKIP_EXISTING" == "true" ] && [ "$FORCE_BUILD" != "true" ]; then
+                # Check if this version is beta to determine the actual tag
+                IS_BETA=$(echo "$BETA_VERSIONS" | jq -r --arg v "$version" '.[$v] // false')
+                if [ "$IS_BETA" == "true" ]; then
+                  CHECK_TAG="${version}-beta"
+                else
+                  CHECK_TAG="${version}"
+                fi
+
                 # Check if version exists in both registries
-                DH_EXISTS=$(skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${version}" > /dev/null 2>&1 && echo "yes" || echo "no")
-                GHCR_EXISTS=$(skopeo inspect "docker://${{ env.GHCR_REPO }}:${version}" > /dev/null 2>&1 && echo "yes" || echo "no")
+                DH_EXISTS=$(skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${CHECK_TAG}" > /dev/null 2>&1 && echo "yes" || echo "no")
+                GHCR_EXISTS=$(skopeo inspect "docker://${{ env.GHCR_REPO }}:${CHECK_TAG}" > /dev/null 2>&1 && echo "yes" || echo "no")
 
                 if [ "$DH_EXISTS" == "yes" ] && [ "$GHCR_EXISTS" == "yes" ]; then
-                  echo "::notice::Skipping version $version - already exists in both registries"
+                  echo "::notice::Skipping version $version (tag: $CHECK_TAG) - already exists in both registries"
                   continue
                 fi
               fi
@@ -774,40 +829,62 @@ jobs:
         run: |
           VERSION="${{ matrix.version }}"
           LATEST_VERSION="${{ needs.check-releases.outputs.latest_version }}"
+          LATEST_IS_BETA="${{ needs.check-releases.outputs.latest_is_beta }}"
+          BETA_VERSIONS='${{ needs.check-releases.outputs.beta_versions }}'
           TAG_AS_LATEST="${{ github.event.inputs.tag_as_latest }}"
           PUSH_DOCKERHUB="${{ github.event.inputs.push_to_dockerhub }}"
           PUSH_GHCR="${{ github.event.inputs.push_to_ghcr }}"
 
+          # Check if current version is beta
+          IS_BETA=$(echo "$BETA_VERSIONS" | jq -r --arg v "$VERSION" '.[$v] // false')
+          echo "Version $VERSION is beta: $IS_BETA"
+
           # Generate date tag in Bangladesh time (UTC+6) - format: DDMMYYYY
           DATE_TAG=$(TZ=Asia/Dhaka date +"%d%m%Y")
-          VERSION_DATE_TAG="${VERSION}-${DATE_TAG}"
+
+          # Generate tags based on beta status
+          if [ "$IS_BETA" == "true" ]; then
+            # Beta version tags: VERSION-beta, VERSION-beta-DATE, beta (rolling)
+            VERSION_TAG="${VERSION}-beta"
+            VERSION_DATE_TAG="${VERSION}-beta-${DATE_TAG}"
+            ROLLING_TAG="beta"
+          else
+            # Non-beta version tags: VERSION, VERSION-DATE, latest (rolling)
+            VERSION_TAG="${VERSION}"
+            VERSION_DATE_TAG="${VERSION}-${DATE_TAG}"
+            ROLLING_TAG="latest"
+          fi
 
           TAGS=""
 
           # Docker Hub tags
           if [ "$PUSH_DOCKERHUB" != "false" ]; then
-            TAGS="${{ env.DOCKERHUB_REPO }}:${VERSION}"
+            TAGS="${{ env.DOCKERHUB_REPO }}:${VERSION_TAG}"
             TAGS="$TAGS,${{ env.DOCKERHUB_REPO }}:${VERSION_DATE_TAG}"
+            # Add rolling tag (beta or latest) only if this is the latest version or tag_as_latest is true
             if [ "$VERSION" == "$LATEST_VERSION" ] || [ "$TAG_AS_LATEST" == "true" ]; then
-              TAGS="$TAGS,${{ env.DOCKERHUB_REPO }}:latest"
+              TAGS="$TAGS,${{ env.DOCKERHUB_REPO }}:${ROLLING_TAG}"
             fi
           fi
 
           # GHCR tags
           if [ "$PUSH_GHCR" != "false" ]; then
             if [ -n "$TAGS" ]; then
-              TAGS="$TAGS,${{ env.GHCR_REPO }}:${VERSION}"
+              TAGS="$TAGS,${{ env.GHCR_REPO }}:${VERSION_TAG}"
             else
-              TAGS="${{ env.GHCR_REPO }}:${VERSION}"
+              TAGS="${{ env.GHCR_REPO }}:${VERSION_TAG}"
             fi
             TAGS="$TAGS,${{ env.GHCR_REPO }}:${VERSION_DATE_TAG}"
+            # Add rolling tag (beta or latest) only if this is the latest version or tag_as_latest is true
             if [ "$VERSION" == "$LATEST_VERSION" ] || [ "$TAG_AS_LATEST" == "true" ]; then
-              TAGS="$TAGS,${{ env.GHCR_REPO }}:latest"
+              TAGS="$TAGS,${{ env.GHCR_REPO }}:${ROLLING_TAG}"
             fi
           fi
 
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
           echo "date_tag=$DATE_TAG" >> $GITHUB_OUTPUT
+          echo "is_beta=$IS_BETA" >> $GITHUB_OUTPUT
+          echo "version_tag=$VERSION_TAG" >> $GITHUB_OUTPUT
           echo "Image tags: $TAGS"
 
       - name: Generate Docker metadata
@@ -818,9 +895,9 @@ jobs:
             ${{ env.DOCKERHUB_REPO }}
             ${{ env.GHCR_REPO }}
           tags: |
-            type=raw,value=${{ matrix.version }}
-            type=raw,value=${{ matrix.version }}-${{ steps.tags.outputs.date_tag }}
-            type=raw,value=latest,enable=${{ matrix.version == needs.check-releases.outputs.latest_version || github.event.inputs.tag_as_latest == 'true' }}
+            type=raw,value=${{ steps.tags.outputs.version_tag }}
+            type=raw,value=${{ steps.tags.outputs.version_tag }}-${{ steps.tags.outputs.date_tag }}
+            type=raw,value=${{ steps.tags.outputs.is_beta == 'true' && 'beta' || 'latest' }},enable=${{ matrix.version == needs.check-releases.outputs.latest_version || github.event.inputs.tag_as_latest == 'true' }}
           labels: |
             org.opencontainers.image.title=iSpy Agent DVR
             org.opencontainers.image.description=Agent DVR - Professional video surveillance software for Linux, Windows and macOS
@@ -830,6 +907,8 @@ jobs:
             org.opencontainers.image.documentation=https://www.ispyconnect.com/docs/agent/about
             org.opencontainers.image.base.name=${{ needs.check-releases.outputs.base_image }}
             org.opencontainers.image.base.digest=${{ steps.base-digest.outputs.digest }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            ispyagentdvr.release.beta=${{ steps.tags.outputs.is_beta }}
 
       - name: Build and push Docker image
         id: build-push
@@ -868,7 +947,7 @@ jobs:
         if: github.event.inputs.run_security_scan != 'false'
         uses: aquasecurity/trivy-action@0.33.1
         with:
-          image-ref: '${{ env.DOCKERHUB_REPO }}:${{ matrix.version }}'
+          image-ref: '${{ env.DOCKERHUB_REPO }}:${{ steps.tags.outputs.version_tag }}'
           format: 'sarif'
           output: 'trivy-results-${{ matrix.version }}.sarif'
           severity: 'CRITICAL,HIGH'
@@ -885,11 +964,17 @@ jobs:
 
       - name: Build summary
         run: |
-          echo "## Build Complete: ${{ matrix.version }}" >> $GITHUB_STEP_SUMMARY
+          BETA_STATUS="${{ steps.tags.outputs.is_beta }}"
+          if [ "$BETA_STATUS" == "true" ]; then
+            echo "## 🧪 Build Complete: ${{ matrix.version }} (BETA)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ✅ Build Complete: ${{ matrix.version }}" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Version | ${{ matrix.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release Type | ${{ steps.tags.outputs.is_beta == 'true' && '🧪 Beta' || '📦 Stable' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Digest | ${{ steps.build-push.outputs.digest }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Image ID | ${{ steps.build-push.outputs.imageid }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Platforms | ${{ needs.check-releases.outputs.platforms }} |" >> $GITHUB_STEP_SUMMARY
