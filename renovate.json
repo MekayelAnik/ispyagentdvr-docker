@@ -103,12 +103,12 @@
         "dependencies",
         "github-actions"
       ],
-      "excludePackageNames": [
-        "/^actions\\//",
-        "/^docker\\//",
-        "/^aquasecurity\\//",
-        "/^securego\\//",
-        "/^github\\/codeql/"
+      "matchPackageNames": [
+        "!/^actions\\//",
+        "!/^docker\\//",
+        "!/^aquasecurity\\//",
+        "!/^securego\\//",
+        "!/^github\\/codeql/"
       ]
     }
   ],
