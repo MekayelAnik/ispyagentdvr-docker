@@ -211,7 +211,8 @@ jobs:
       stable_version: ${{ steps.check-stable.outputs.stable_version }}
       action_type: ${{ steps.set-action.outputs.action }}
       missing_versions: ${{ steps.validate-versions.outputs.missing_versions }}
-      base_image: ${{ steps.resolve-base-image.outputs.image }}
+      base_image_selection: ${{ steps.resolve-base-image.outputs.selection }}
+      custom_base_image: ${{ steps.resolve-base-image.outputs.custom }}
       base_image_updated: ${{ steps.check-base-image.outputs.updated }}
       platforms: ${{ steps.set-platforms.outputs.platforms }}
       compression_level: ${{ steps.set-compression.outputs.level }}
@@ -252,44 +253,28 @@ jobs:
           fi
           echo "ZSTD compression level: ${{ github.event.inputs.compression_level || '22' }}"
 
-      - name: Resolve base image
+      - name: Resolve base image selection
         id: resolve-base-image
-        env:
-          DEFAULT_IMAGE: ${{ env.DEFAULT_BASE_IMAGE }}
         run: |
           INPUT_BASE="${{ github.event.inputs.base_image }}"
           CUSTOM_BASE="${{ github.event.inputs.custom_base_image }}"
 
-          # Determine base image based on input
-          case "$INPUT_BASE" in
-            "custom")
-              if [ -n "$CUSTOM_BASE" ]; then
-                RESOLVED_IMAGE="$CUSTOM_BASE"
-              else
-                echo "::warning::Custom base image selected but no URL provided, using default"
-                RESOLVED_IMAGE="$DEFAULT_IMAGE"
-              fi
-              ;;
-            "trixie-slim-default-ffmpeg")
-              RESOLVED_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-default-ffmpeg"
-              ;;
-            "bookworm-slim-vlc-jellyfin-ffmpeg")
-              RESOLVED_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-bookworm-slim-vlc-jellyfin-ffmpeg"
-              ;;
-            *)
-              # Default for schedule, repository_dispatch, or 'default (latest)' selection
-              RESOLVED_IMAGE="$DEFAULT_IMAGE"
-              ;;
-          esac
-
-          # Validate and output - ensure never empty
-          if [ -z "$RESOLVED_IMAGE" ]; then
-            echo "::warning::Resolved image was empty, using default from env"
-            RESOLVED_IMAGE="$DEFAULT_IMAGE"
+          # Output the selection key (not the resolved URL to avoid secret masking)
+          # The actual URL will be resolved in each build job
+          if [ -z "$INPUT_BASE" ] || [ "$INPUT_BASE" == "default (latest)" ]; then
+            echo "selection=default" >> $GITHUB_OUTPUT
+          else
+            echo "selection=$INPUT_BASE" >> $GITHUB_OUTPUT
           fi
 
-          echo "Resolved base image: $RESOLVED_IMAGE"
-          echo "image=$RESOLVED_IMAGE" >> $GITHUB_OUTPUT
+          # Pass custom base image if specified
+          if [ "$INPUT_BASE" == "custom" ] && [ -n "$CUSTOM_BASE" ]; then
+            echo "custom=$CUSTOM_BASE" >> $GITHUB_OUTPUT
+          else
+            echo "custom=" >> $GITHUB_OUTPUT
+          fi
+
+          echo "Base image selection: ${INPUT_BASE:-default}"
 
       - name: Install dependencies
         run: |
@@ -519,8 +504,28 @@ jobs:
 
       - name: Check base image for updates
         id: check-base-image
+        env:
+          DEFAULT_IMAGE: ${{ env.DEFAULT_BASE_IMAGE }}
         run: |
-          BASE_IMAGE="${{ steps.resolve-base-image.outputs.image }}"
+          # Resolve base image from selection (same logic as build-platform job)
+          BASE_SELECTION="${{ steps.resolve-base-image.outputs.selection }}"
+          CUSTOM_BASE="${{ steps.resolve-base-image.outputs.custom }}"
+
+          case "$BASE_SELECTION" in
+            "custom")
+              BASE_IMAGE="${CUSTOM_BASE:-$DEFAULT_IMAGE}"
+              ;;
+            "trixie-slim-default-ffmpeg")
+              BASE_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-default-ffmpeg"
+              ;;
+            "bookworm-slim-vlc-jellyfin-ffmpeg")
+              BASE_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-bookworm-slim-vlc-jellyfin-ffmpeg"
+              ;;
+            *)
+              BASE_IMAGE="$DEFAULT_IMAGE"
+              ;;
+          esac
+
           LATEST_VERSION="${{ steps.fetch-releases.outputs.latest_version }}"
           UPDATE_ENABLED="${{ github.event.inputs.update_base_image || env.UPDATE_BASE_IMAGE_ENABLED }}"
 
@@ -777,7 +782,7 @@ jobs:
           echo "| Should Build | ${{ steps.determine-versions.outputs.should_build }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Missing Versions | ${{ steps.validate-versions.outputs.missing_versions || 'None' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Eligible for Stable | ${{ steps.check-stable.outputs.should_mark_stable }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Base Image | ${{ steps.resolve-base-image.outputs.image }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Base Image Selection | ${{ steps.resolve-base-image.outputs.selection }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Base Image Updated | ${{ steps.check-base-image.outputs.updated }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Platforms | ${{ steps.set-platforms.outputs.platforms }} |" >> $GITHUB_STEP_SUMMARY
           echo "| ZSTD Compression | Level ${{ steps.set-compression.outputs.level }} |" >> $GITHUB_STEP_SUMMARY
@@ -857,15 +862,31 @@ jobs:
         run: |
           VERSION="${{ matrix.version }}"
           VERSION_UNDERSCORE="${VERSION//./_}"
-          BASE_IMAGE="${{ needs.check-releases.outputs.base_image }}"
+          BASE_SELECTION="${{ needs.check-releases.outputs.base_image_selection }}"
+          CUSTOM_BASE="${{ needs.check-releases.outputs.custom_base_image }}"
 
-          # Ensure BASE_IMAGE is never empty
+          # Resolve base image from selection key (avoids GitHub Actions secret masking)
+          case "$BASE_SELECTION" in
+            "custom")
+              if [ -n "$CUSTOM_BASE" ]; then
+                BASE_IMAGE="$CUSTOM_BASE"
+              else
+                BASE_IMAGE="$DEFAULT_IMAGE"
+              fi
+              ;;
+            "trixie-slim-default-ffmpeg")
+              BASE_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-default-ffmpeg"
+              ;;
+            "bookworm-slim-vlc-jellyfin-ffmpeg")
+              BASE_IMAGE="mekayelanik/ispyagentdvr-base-image:ispyagentdvr-bookworm-slim-vlc-jellyfin-ffmpeg"
+              ;;
+            *)
+              BASE_IMAGE="$DEFAULT_IMAGE"
+              ;;
+          esac
+
+          # Final fallback
           if [ -z "$BASE_IMAGE" ]; then
-            echo "::warning::Base image from check-releases was empty, using default"
-            BASE_IMAGE="$DEFAULT_IMAGE"
-          fi
-          if [ -z "$BASE_IMAGE" ]; then
-            echo "::warning::Default image env was also empty, using env fallback"
             BASE_IMAGE="$DEFAULT_IMAGE"
           fi
 
@@ -897,14 +918,9 @@ jobs:
 
       - name: Get base image digest
         id: base-digest
-        env:
-          DEFAULT_IMAGE: ${{ env.DEFAULT_BASE_IMAGE }}
         run: |
-          BASE_IMAGE="${{ needs.check-releases.outputs.base_image }}"
-          # Ensure BASE_IMAGE is never empty
-          if [ -z "$BASE_IMAGE" ]; then
-            BASE_IMAGE="$DEFAULT_IMAGE"
-          fi
+          # Use the base image resolved in prepare step
+          BASE_IMAGE="${{ steps.prepare.outputs.base_image }}"
           BASE_DIGEST=$(skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Digest' || echo "unknown")
           echo "digest=$BASE_DIGEST" >> $GITHUB_OUTPUT
           echo "Base image digest: $BASE_DIGEST"
