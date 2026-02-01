@@ -1195,7 +1195,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         if: github.event.inputs.run_security_scan != 'false'
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # 0.33.1
         with:
           image-ref: '${{ env.DOCKERHUB_REPO }}:${{ steps.tags.outputs.version_tag }}'
           format: 'sarif'
@@ -1206,7 +1206,7 @@ jobs:
 
       - name: Upload Trivy scan results
         if: github.event.inputs.run_security_scan != 'false'
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@b20883b0cd1f46c72ae0ba6d1090936928f9fa30 # v4
         with:
           sarif_file: 'trivy-results-${{ matrix.version }}.sarif'
           category: 'trivy-${{ matrix.version }}'
