@@ -28,7 +28,7 @@ TEMP_FILE=$(mktemp "${DOCKERFILE_NAME}.XXXXXX") || {
     echo "ARG BASE_IMAGE=$BASE_IMAGE"
     echo "ARG AGENTDVR_VERSION=$AGENTDVR_VERSION"
     echo "FROM $BASE_IMAGE"
-    
+
     # Only add additional content for non-publication builds
     if [ ! -e ./resources/build_data/publication ]; then
         cat << 'EOF'
@@ -47,6 +47,8 @@ RUN useradd -m -d /AgentDVR/ -s /bin/bash -u 1000 agentdvr && \
     chmod 775 /AgentDVR/ && \
     mkdir -p /AgentDVR/Commands && \
     chmod -R 777 /AgentDVR/Commands && \
+    mkdir -p /AgentDVR/Models && \
+    chmod -R 777 /AgentDVR/Models && \
     name="$(whoami)" && \
     echo "Adding permission for USER:root to local device (GPU) access" && \
     usermod -aG video "$name" && \

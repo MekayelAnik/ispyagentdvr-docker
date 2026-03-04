@@ -53,6 +53,7 @@ REQUIRED_DIRS=(
     "/AgentDVR/Commands"
     "/AgentDVR/Masks"
     "/AgentDVR/sounds"
+    "/AgentDVR/Models"
 )
 BANNER_FILE="$script_dir/banner.sh"
 AGENT_BINARY="/AgentDVR/Agent"
@@ -62,6 +63,7 @@ SOUNDS_DIR="/AgentDVR/sounds"
 MASKS_DIR="/AgentDVR/Masks"
 FIRST_RUN="/AgentDVR/FirstRun"
 CONTENT_DIR="/AgentDVR/Content"
+MODEL_DIR="/AgentDVR/Models"
 SESSION_LOG="/AgentDVR/Media/sessionlog.txt"
 
 # Error handling function
@@ -105,16 +107,16 @@ migrate_content_directories() {
     if [[ -n "$PUID" && $PUID -ne 0 ]]; then
         validate_id "$PUID" "PUID"
         validate_id "${PGID:-$PUID}" "PGID"
-        
+
         target_uid="$PUID"
         target_gid="${PGID:-$PUID}"
-        dirs=("$COMMANDS_DIR" "$SOUNDS_DIR" "$MASKS_DIR" "$CONFIG_DIR")
+        dirs=("$COMMANDS_DIR" "$SOUNDS_DIR" "$MASKS_DIR" "$CONFIG_DIR" "$MODEL_DIR")
         printf "${LITE_GREEN}Changing directory permissions for:\n${NC}"
         for dir_path in "${dirs[@]}"; do
             dir_stats=$(stat -c '%u %g' "$dir_path")
             current_uid=${dir_stats%% *}
             current_gid=${dir_stats#* }
-            
+
             if [[ "$current_uid" != "$target_uid" || "$current_gid" != "$target_gid" ]]; then
                 printf "${BLUE}%s\n${NC}" "$dir_path"
                 if ! chown -R "$target_uid:$target_gid" "$dir_path"; then
@@ -126,7 +128,7 @@ migrate_content_directories() {
             fi
         done
     fi
-        
+
         printf "${LITE_GREEN}Content directories migration completed!\n${NC}\n"
     else
         printf "${ORANGE}No Content directory found, skipping migration.${NC}\n"
@@ -157,15 +159,15 @@ ensure_directories() {
 
         # Set permissions if running as root
         if [[ $(id -u) -eq 0 ]]; then
-            if [[ "$dir" == "$COMMANDS_DIR" || "$dir" == "$SOUNDS_DIR" || "$dir" == "$MASKS_DIR" ]] || 
-               [[ "$dir" == "$CONFIG_DIR" ]] || [[ "$dir" == "$SESSION_LOG" ]]; then 
+            if [[ "$dir" == "$COMMANDS_DIR" || "$dir" == "$SOUNDS_DIR" || "$dir" == "$MASKS_DIR" ]] ||
+               [[ "$dir" == "$CONFIG_DIR" ]] || [[ "$dir" == "$MODEL_DIR" ]] || [[ "$dir" == "$SESSION_LOG" ]] ; then
                 continue
             fi
 
             if [[ -n "$PUID" && "$PUID" -ne 0 ]]; then
                 validate_id "$PUID" "PUID"
                 validate_id "$PGID" "PGID"
-                
+
                 target_uid="$PUID"
                 target_gid="${PGID:-$PUID}"
                 current_uid=$(stat -c '%u' "$dir")
@@ -187,7 +189,7 @@ ensure_directories() {
 # Permission checking
 check_write_permissions() {
     local user="$1" errors=0 dir
-    
+
     if [[ "$user" == 'agentdvr' ]]; then
         local PC1="${ASH_GRAY}"
         local PC2="${SEA_GREEN}"
@@ -197,7 +199,7 @@ check_write_permissions() {
         local PC2="${BLUE}"
         local PC3="${ERROR_RED}"
     fi
-    
+
     printf "${PC1}====================================================================${NC}\n"
     printf "${PC2}Verifying write permissions for user:${NC} ${PC3}%s${NC}\n" "$user"
     printf "${PC1}====================================================================${NC}\n"
@@ -246,13 +248,13 @@ setup_user_group() {
     # Handle group modifications
     if [[ -n "$PGID" ]]; then
         validate_id "$PGID" "PGID"
-        
+
         existing_group=$(getent group "$PGID" | cut -d: -f1)
-        
+
         # If the target GID already exists
         if [[ -n "$existing_group" ]]; then
             printf "${ORANGE}Group with GID %s already exists (%s). Using existing group.${NC}\n" "$PGID" "$existing_group"
-            
+
             # Delete agentdvr group if it exists and isn't the existing group
             if [[ "$existing_group" != "agentdvr" ]] && getent group agentdvr >/dev/null; then
                 # Add agentdvr user to the existing group and make it primary
@@ -303,7 +305,7 @@ run_as_root() {
 # Start agent with proper permissions
 start_agent() {
     verify_agent_binary
-    
+
     # Skip user switching if PUID=0 (root)
     if [[ "$PUID" == "0" ]]; then
         printf "${ORANGE}PUID=0 (root) detected. Running as root.${NC}\n"
@@ -322,12 +324,12 @@ start_agent() {
         if type -P gosu &>/dev/null; then
             printf "${SEA_GREEN}PUID and PGID are set. Will run as agentdvr user.${NC}\n"
             printf "${SEA_GREEN}Running as agentdvr user:${NC} (${ORANGE}PUID:${NC} ${GREEN}%s${NC} ${ORANGE}PGID:${NC} ${GREEN}%s${NC})\n" "${PUID}" "${PGID:-$PUID}"
-            
+
             # Setup user/group before checking permissions
             setup_user_group
             set_gpu_permissions
             check_write_permissions "agentdvr"
-            
+
             exec gosu "${PUID}:${PGID:-$PUID}" "$AGENT_BINARY"
         else
             printf "${ERROR_RED}gosu not found. Running as root instead.${NC}\n"
@@ -363,14 +365,14 @@ main() {
             if ! run_banner; then
                 printf "${ORANGE}Continuing despite banner execution failure${NC}\n"
             fi
-            
+
             # Run first-time setup only if FirstRun file exists
             if [[ -f "$FIRST_RUN" ]]; then
                 printf "${ORANGE}\nNOTE: Booting container for the first time... \nIt may take some time. Please wait...\n\n${NC}"
                 ensure_directories
                 rm -f "$FIRST_RUN" || error_exit "Failed to remove FirstRun file"
             fi
-            
+
             start_agent
             ;;
     esac
