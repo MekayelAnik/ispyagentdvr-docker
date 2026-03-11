@@ -1003,7 +1003,7 @@ jobs:
           echo "Exported digest: $digest"
 
       - name: Upload digest artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: digest-${{ matrix.version }}-${{ matrix.platform_slug }}
           path: /tmp/digests/*
@@ -1239,7 +1239,7 @@ jobs:
           done
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: build-info-${{ matrix.version }}
           path: |
