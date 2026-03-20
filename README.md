@@ -1,5 +1,5 @@
 <h1>iSpy Agent DVR multi-arch image</h1>
-<img alt="ispyagentdvr" src="https://ispycontent.azureedge.net/img/ispy2.png">
+<img alt="ispyagentdvr" src="https://www.ispyconnect.com/img/agent.webp">
 <p>This is an unofficial multi-arch Agent DVR image for multiplatform support. Official Website: <a href="https://www.ispyconnect.com" rel="nofollow noopener">https://www.ispyconnect.com</a>
 </p>
 <img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/mekayelanik/ispyagentdvr.svg"><img alt="Docker Stars" src="https://img.shields.io/docker/stars/mekayelanik/ispyagentdvr.svg">
