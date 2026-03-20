@@ -28,12 +28,6 @@ name: Docker Build & Publish
 
 on:
   # =========================================================================
-  # TIME-BASED TRIGGER: Check for new releases every 30 minutes
-  # =========================================================================
-  schedule:
-    - cron: '*/30 * * * *'
-
-  # =========================================================================
   # EXTERNAL TRIGGER: For reliable scheduling via cron-job.org or similar
   # =========================================================================
   repository_dispatch:
@@ -128,6 +122,12 @@ on:
         type: boolean
         default: true
 
+      force_promote_stable:
+        description: 'Force promote latest non-beta candidate to stable (bypasses 5-day rule and skip checks)'
+        required: false
+        type: boolean
+        default: false
+
       push_to_dockerhub:
         description: 'Push to Docker Hub registry'
         required: false
@@ -172,11 +172,10 @@ on:
           - '3'
         default: '22'
 
-# Cancel in-progress runs for the same trigger type
-# - For scheduled/repository_dispatch: Only one auto-check runs at a time
-# - For workflow_dispatch: Groups by the versions input to allow different version builds
+# Cancel in-progress runs for the same trigger/action context.
+# This avoids unrelated manual actions sharing the same concurrency key.
 concurrency:
-  group: docker-build-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.versions || 'auto-check' }}
+  group: docker-build-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action || 'auto-check' }}-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.versions || 'default' }}
   cancel-in-progress: false
 
 env:
@@ -225,7 +224,7 @@ jobs:
       - name: Set action type
         id: set-action
         run: |
-          if [ "${{ github.event_name }}" == "schedule" ] || [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
             echo "action=auto-check" >> $GITHUB_OUTPUT
             echo "Running scheduled auto-check (trigger: ${{ github.event_name }})..."
           else
@@ -584,22 +583,21 @@ jobs:
       - name: Check for 5-day stable promotion
         id: check-stable
         run: |
-          # Read latest release info (version|date|is_beta)
-          LATEST_LINE=$(head -1 /tmp/releases.txt)
-          LATEST_VERSION=$(echo "$LATEST_LINE" | cut -d'|' -f1)
-          LATEST_DATE=$(echo "$LATEST_LINE" | cut -d'|' -f2)
-          LATEST_IS_BETA=$(echo "$LATEST_LINE" | cut -d'|' -f3)
+          FORCE_PROMOTE_STABLE="${{ github.event.inputs.force_promote_stable }}"
 
-          if [ -z "$LATEST_DATE" ]; then
-            echo "::warning::Could not parse release date"
-            echo "should_mark_stable=false" >> $GITHUB_OUTPUT
-            echo "stable_version=" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          # Find latest non-beta release candidate (do not reset when latest release is beta)
+          CANDIDATE_VERSION=""
+          CANDIDATE_DATE=""
+          while IFS='|' read -r VERSION DATE IS_BETA; do
+            if [ "$IS_BETA" != "true" ] && [ -n "$VERSION" ]; then
+              CANDIDATE_VERSION="$VERSION"
+              CANDIDATE_DATE="$DATE"
+              break
+            fi
+          done < /tmp/releases.txt
 
-          # Beta versions cannot be marked as stable
-          if [ "$LATEST_IS_BETA" == "true" ]; then
-            echo "Latest version $LATEST_VERSION is a BETA release - not eligible for stable"
+          if [ -z "$CANDIDATE_VERSION" ] || [ -z "$CANDIDATE_DATE" ]; then
+            echo "::warning::Could not determine a non-beta stable candidate"
             echo "should_mark_stable=false" >> $GITHUB_OUTPUT
             echo "stable_version=" >> $GITHUB_OUTPUT
             exit 0
@@ -607,25 +605,29 @@ jobs:
 
           # Convert date (M/D/YYYY) to epoch
           # Handle both 1/1/2025 and 12/27/2025 formats
-          MONTH=$(echo "$LATEST_DATE" | cut -d'/' -f1)
-          DAY=$(echo "$LATEST_DATE" | cut -d'/' -f2)
-          YEAR=$(echo "$LATEST_DATE" | cut -d'/' -f3)
+          MONTH=$(echo "$CANDIDATE_DATE" | cut -d'/' -f1)
+          DAY=$(echo "$CANDIDATE_DATE" | cut -d'/' -f2)
+          YEAR=$(echo "$CANDIDATE_DATE" | cut -d'/' -f3)
 
           LATEST_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo "0")
           CURRENT_EPOCH=$(date +%s)
           FIVE_DAYS_SECONDS=$((5 * 24 * 60 * 60))
           DAYS_OLD=$(( (CURRENT_EPOCH - LATEST_EPOCH) / 86400 ))
 
-          echo "Latest release ($LATEST_VERSION) is $DAYS_OLD days old"
+          echo "Latest non-beta release ($CANDIDATE_VERSION) is $DAYS_OLD days old"
 
-          if [ $LATEST_EPOCH -gt 0 ] && [ $((CURRENT_EPOCH - LATEST_EPOCH)) -ge $FIVE_DAYS_SECONDS ]; then
+          if [ "$FORCE_PROMOTE_STABLE" == "true" ]; then
             echo "should_mark_stable=true" >> $GITHUB_OUTPUT
-            echo "stable_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
-            echo "Version $LATEST_VERSION is $DAYS_OLD days old, eligible for stable"
+            echo "stable_version=$CANDIDATE_VERSION" >> $GITHUB_OUTPUT
+            echo "Force-promote enabled, selecting $CANDIDATE_VERSION for stable"
+          elif [ $LATEST_EPOCH -gt 0 ] && [ $((CURRENT_EPOCH - LATEST_EPOCH)) -ge $FIVE_DAYS_SECONDS ]; then
+            echo "should_mark_stable=true" >> $GITHUB_OUTPUT
+            echo "stable_version=$CANDIDATE_VERSION" >> $GITHUB_OUTPUT
+            echo "Version $CANDIDATE_VERSION is $DAYS_OLD days old, eligible for stable"
           else
             echo "should_mark_stable=false" >> $GITHUB_OUTPUT
             echo "stable_version=" >> $GITHUB_OUTPUT
-            echo "Version is less than 5 days old, not eligible for stable yet"
+            echo "Version $CANDIDATE_VERSION is less than 5 days old, not eligible for stable yet"
           fi
 
       - name: Determine versions to build
@@ -1256,7 +1258,8 @@ jobs:
     if: |
       always() &&
       (needs.check-releases.outputs.action_type == 'sync-registries' ||
-       (needs.check-releases.outputs.action_type == 'auto-check' && needs.merge-manifest.result == 'success'))
+       (needs.check-releases.outputs.action_type == 'auto-check' &&
+        (needs.merge-manifest.result == 'success' || needs.check-releases.outputs.should_build == 'false')))
     runs-on: ubuntu-latest
 
     steps:
@@ -1289,6 +1292,9 @@ jobs:
     needs: check-releases
     if: needs.check-releases.outputs.action_type == 'promote-image'
     runs-on: ubuntu-latest
+    concurrency:
+      group: docker-build-${{ github.event.inputs.promote_tag == 'stable' && 'stable-promotion' || 'promote-image' }}
+      cancel-in-progress: false
 
     steps:
       - name: Validate inputs
@@ -1319,23 +1325,23 @@ jobs:
 
           echo "Promoting version $SOURCE to $TARGET..."
 
-          # Check source exists
-          if ! skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${SOURCE}" > /dev/null 2>&1; then
-            echo "::error::Source version $SOURCE not found in Docker Hub"
+          # Check source exists in primary registry (GHCR)
+          if ! skopeo inspect "docker://${{ env.GHCR_REPO }}:${SOURCE}" > /dev/null 2>&1; then
+            echo "::error::Source version $SOURCE not found in GHCR"
             exit 1
           fi
-
-          # Promote on Docker Hub
-          echo "Promoting on Docker Hub..."
-          skopeo copy --all \
-            "docker://${{ env.DOCKERHUB_REPO }}:${SOURCE}" \
-            "docker://${{ env.DOCKERHUB_REPO }}:${TARGET}"
 
           # Promote on GHCR
           echo "Promoting on GHCR..."
           skopeo copy --all \
             "docker://${{ env.GHCR_REPO }}:${SOURCE}" \
             "docker://${{ env.GHCR_REPO }}:${TARGET}"
+
+          # Sync promoted tag to Docker Hub from GHCR (GHCR is primary)
+          echo "Syncing promoted tag to Docker Hub from GHCR..."
+          skopeo copy --all \
+            "docker://${{ env.GHCR_REPO }}:${TARGET}" \
+            "docker://${{ env.DOCKERHUB_REPO }}:${TARGET}"
 
           echo "Successfully promoted $SOURCE to $TARGET on both registries"
 
@@ -1357,13 +1363,20 @@ jobs:
        (needs.check-releases.outputs.action_type == 'auto-check' &&
         needs.check-releases.outputs.should_mark_stable == 'true'))
     runs-on: ubuntu-latest
+    concurrency:
+      group: docker-build-stable-promotion
+      cancel-in-progress: false
+    outputs:
+      promoted_version: ${{ steps.promote-stable.outputs.promoted_version }}
+      promoted_digest: ${{ steps.promote-stable.outputs.promoted_digest }}
+      promoted_at: ${{ steps.promote-stable.outputs.promoted_at }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
       - name: Install skopeo
-        run: sudo apt-get update && sudo apt-get install -y skopeo
+        run: sudo apt-get update && sudo apt-get install -y skopeo jq
 
       - name: Login to registries
         uses: ./.github/actions/registry-login
@@ -1374,39 +1387,86 @@ jobs:
           ghcr_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check and promote to stable
+        id: promote-stable
         run: |
           STABLE_VERSION="${{ needs.check-releases.outputs.stable_version }}"
+          FORCE_PROMOTE_STABLE="${{ github.event.inputs.force_promote_stable }}"
+          TRACKING_FILE="resources/build_data/stable-version"
+          TRACKING_STATE_FILE="resources/build_data/stable-state.json"
+
+          echo "promoted_version=" >> $GITHUB_OUTPUT
+          echo "promoted_digest=" >> $GITHUB_OUTPUT
+          echo "promoted_at=" >> $GITHUB_OUTPUT
 
           if [ -z "$STABLE_VERSION" ]; then
             echo "No version eligible for stable promotion"
             exit 0
           fi
 
+          mkdir -p resources/build_data
+
+          TRACKED_STABLE=""
+          TRACKED_DIGEST=""
+          if [ -f "$TRACKING_STATE_FILE" ]; then
+            TRACKED_STABLE=$(jq -r '.version // empty' "$TRACKING_STATE_FILE" 2>/dev/null || echo "")
+            TRACKED_DIGEST=$(jq -r '.digest // empty' "$TRACKING_STATE_FILE" 2>/dev/null || echo "")
+          elif [ -f "$TRACKING_FILE" ]; then
+            TRACKED_STABLE=$(cat "$TRACKING_FILE" 2>/dev/null || echo "")
+          fi
+
           echo "Checking if stable tag needs update..."
 
-          # Get digests
-          CURRENT_STABLE=$(skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:stable" 2>/dev/null | jq -r '.Digest' || echo "none")
-          VERSION_DIGEST=$(skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${STABLE_VERSION}" 2>/dev/null | jq -r '.Digest' || echo "none")
+          # Get digests from primary registry (GHCR)
+          CURRENT_STABLE=$(skopeo inspect "docker://${{ env.GHCR_REPO }}:stable" 2>/dev/null | jq -r '.Digest' || echo "none")
+          VERSION_DIGEST=$(skopeo inspect "docker://${{ env.GHCR_REPO }}:${STABLE_VERSION}" 2>/dev/null | jq -r '.Digest' || echo "none")
 
           echo "Current stable digest: $CURRENT_STABLE"
           echo "Version $STABLE_VERSION digest: $VERSION_DIGEST"
 
+          if [ -z "$VERSION_DIGEST" ] || [ "$VERSION_DIGEST" == "none" ]; then
+            echo "::error::Could not resolve digest for candidate $STABLE_VERSION in GHCR"
+            exit 1
+          fi
+
+          # Primary idempotency check: if stable already points to candidate digest, skip.
           if [ "$CURRENT_STABLE" == "$VERSION_DIGEST" ] && [ "$CURRENT_STABLE" != "none" ]; then
+            PROMOTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            printf '{"version":"%s","digest":"%s","promoted_at":"%s"}\n' "$STABLE_VERSION" "$VERSION_DIGEST" "$PROMOTED_AT" > "$TRACKING_STATE_FILE"
+            echo "$STABLE_VERSION" > "$TRACKING_FILE"
+            echo "promoted_version=$STABLE_VERSION" >> $GITHUB_OUTPUT
+            echo "promoted_digest=$VERSION_DIGEST" >> $GITHUB_OUTPUT
+            echo "promoted_at=$PROMOTED_AT" >> $GITHUB_OUTPUT
             echo "Stable tag already points to version $STABLE_VERSION"
+            exit 0
+          fi
+
+          # Secondary guard: explicit tracked state skip for already-promoted candidate.
+          if [ "$FORCE_PROMOTE_STABLE" != "true" ] && [ -n "$TRACKED_STABLE" ] && [ "$TRACKED_STABLE" == "$STABLE_VERSION" ] && [ -n "$TRACKED_DIGEST" ] && [ "$TRACKED_DIGEST" == "$VERSION_DIGEST" ]; then
+            echo "Already promoted $STABLE_VERSION to stable, skipping"
+            echo "## Stable Promotion" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Already promoted **$STABLE_VERSION** to **stable** - skipping" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
 
           echo "Marking version $STABLE_VERSION as stable..."
 
-          # Promote on Docker Hub
-          skopeo copy --all \
-            "docker://${{ env.DOCKERHUB_REPO }}:${STABLE_VERSION}" \
-            "docker://${{ env.DOCKERHUB_REPO }}:stable"
-
-          # Promote on GHCR
+          # Promote on GHCR first
           skopeo copy --all \
             "docker://${{ env.GHCR_REPO }}:${STABLE_VERSION}" \
             "docker://${{ env.GHCR_REPO }}:stable"
+
+          # Sync stable tag to Docker Hub from GHCR
+          skopeo copy --all \
+            "docker://${{ env.GHCR_REPO }}:stable" \
+            "docker://${{ env.DOCKERHUB_REPO }}:stable"
+
+          PROMOTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          printf '{"version":"%s","digest":"%s","promoted_at":"%s"}\n' "$STABLE_VERSION" "$VERSION_DIGEST" "$PROMOTED_AT" > "$TRACKING_STATE_FILE"
+          echo "$STABLE_VERSION" > "$TRACKING_FILE"
+          echo "promoted_version=$STABLE_VERSION" >> $GITHUB_OUTPUT
+          echo "promoted_digest=$VERSION_DIGEST" >> $GITHUB_OUTPUT
+          echo "promoted_at=$PROMOTED_AT" >> $GITHUB_OUTPUT
 
           echo "Successfully marked $STABLE_VERSION as stable"
 
@@ -1420,7 +1480,10 @@ jobs:
   update-metadata:
     name: Update Metadata
     needs: [check-releases, merge-manifest, sync-registries, mark-stable]
-    if: always() && needs.merge-manifest.result == 'success'
+    if: |
+      always() &&
+      (needs.merge-manifest.result == 'success' ||
+       needs.mark-stable.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1430,6 +1493,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Update build metadata
         run: |
@@ -1447,6 +1511,16 @@ jobs:
           mkdir -p resources/build_data
           echo "$VERSION_UNDERSCORE" > resources/build_data/version
 
+          # Track promoted stable version when mark-stable job succeeds
+          if [ "${{ needs.mark-stable.result }}" == "success" ] && [ "${{ needs.check-releases.outputs.should_mark_stable }}" == "true" ] && [ -n "${{ needs.check-releases.outputs.stable_version }}" ]; then
+            echo "${{ needs.check-releases.outputs.stable_version }}" > resources/build_data/stable-version
+          fi
+
+          # Persist stable state (version + digest + promoted_at) for idempotent promotions.
+          if [ "${{ needs.mark-stable.result }}" == "success" ] && [ -n "${{ needs.mark-stable.outputs.promoted_version }}" ] && [ -n "${{ needs.mark-stable.outputs.promoted_digest }}" ] && [ -n "${{ needs.mark-stable.outputs.promoted_at }}" ]; then
+            printf '{"version":"%s","digest":"%s","promoted_at":"%s"}\n' "${{ needs.mark-stable.outputs.promoted_version }}" "${{ needs.mark-stable.outputs.promoted_digest }}" "${{ needs.mark-stable.outputs.promoted_at }}" > resources/build_data/stable-state.json
+          fi
+
           # Update .agentdvr-version (consolidated from check-agentdvr-version workflow)
           echo "$LATEST_VERSION" > .agentdvr-version
 
@@ -1457,7 +1531,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add resources/tag resources/build-timestamp resources/build_data/version .agentdvr-version 2>/dev/null || true
+          git add resources/tag resources/build-timestamp resources/build_data/version resources/build_data/stable-version resources/build_data/stable-state.json .agentdvr-version 2>/dev/null || true
 
           if git diff --staged --quiet; then
             echo "No changes to commit"
@@ -1468,5 +1542,23 @@ jobs:
             Built: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
             [skip ci]"
-            git push
+
+            # Metadata updates are non-critical; avoid failing the workflow on push races.
+            for attempt in 1 2 3; do
+              echo "Push attempt ${attempt}/3"
+
+              if git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin HEAD:"${GITHUB_REF_NAME}"; then
+                echo "Metadata push succeeded"
+                break
+              fi
+
+              git rebase --abort 2>/dev/null || true
+
+              if [ "$attempt" -eq 3 ]; then
+                echo "::warning::Could not push metadata after retries due to concurrent updates."
+                exit 0
+              fi
+
+              sleep 3
+            done
           fi
