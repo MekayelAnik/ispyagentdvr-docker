@@ -1511,13 +1511,9 @@ jobs:
           mkdir -p resources/build_data
           echo "$VERSION_UNDERSCORE" > resources/build_data/version
 
-          # Track promoted stable version when mark-stable job succeeds
-          if [ "${{ needs.mark-stable.result }}" == "success" ] && [ "${{ needs.check-releases.outputs.should_mark_stable }}" == "true" ] && [ -n "${{ needs.check-releases.outputs.stable_version }}" ]; then
-            echo "${{ needs.check-releases.outputs.stable_version }}" > resources/build_data/stable-version
-          fi
-
-          # Persist stable state (version + digest + promoted_at) for idempotent promotions.
+          # Track stable promotion only when mark-stable produced concrete promotion outputs.
           if [ "${{ needs.mark-stable.result }}" == "success" ] && [ -n "${{ needs.mark-stable.outputs.promoted_version }}" ] && [ -n "${{ needs.mark-stable.outputs.promoted_digest }}" ] && [ -n "${{ needs.mark-stable.outputs.promoted_at }}" ]; then
+            echo "${{ needs.mark-stable.outputs.promoted_version }}" > resources/build_data/stable-version
             printf '{"version":"%s","digest":"%s","promoted_at":"%s"}\n' "${{ needs.mark-stable.outputs.promoted_version }}" "${{ needs.mark-stable.outputs.promoted_digest }}" "${{ needs.mark-stable.outputs.promoted_at }}" > resources/build_data/stable-state.json
           fi
 
