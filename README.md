@@ -1,8 +1,24 @@
 <h1>iSpy Agent DVR multi-arch image</h1>
 <img alt="ispyagentdvr" src="https://www.ispyconnect.com/img/agent.webp">
-<p>This is an unofficial multi-arch Agent DVR image for multiplatform support. Official Website: <a href="https://www.ispyconnect.com" rel="nofollow noopener">https://www.ispyconnect.com</a>
+<p>Official Agent DVR image. Website: <a href="https://www.ispyconnect.com" rel="nofollow noopener">https://www.ispyconnect.com</a>
 </p>
-<img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/mekayelanik/ispyagentdvr.svg"><img alt="Docker Stars" src="https://img.shields.io/docker/stars/mekayelanik/ispyagentdvr.svg">
+<p align="center">
+  <a href="https://www.gnu.org/licenses/gpl-3.0"><img alt="License: GPLv3" src="https://img.shields.io/badge/License-GPLv3-blue.svg"></a>
+  <a href="https://hub.docker.com/r/mekayelanik/ispyagentdvr"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/mekayelanik/ispyagentdvr.svg"></a>
+  <a href="https://hub.docker.com/r/mekayelanik/ispyagentdvr"><img alt="Docker Stars" src="https://img.shields.io/docker/stars/mekayelanik/ispyagentdvr.svg"></a>
+  <a href="https://ghcr.io/mekayelanik/ispyagentdvr"><img alt="GHCR" src="https://img.shields.io/badge/GHCR-ghcr.io%2Fmekayelanik%2Fispyagentdvr-blue"></a>
+  <a href="https://hub.docker.com/r/mekayelanik/ispyagentdvr"><img alt="Platforms" src="https://img.shields.io/badge/Platforms-amd64%20%7C%20arm64%20%7C%20arm%2Fv7-lightgrey"></a>
+  <a href="https://github.com/MekayelAnik/ispyagentdvr-docker/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/MekayelAnik/ispyagentdvr-docker"></a>
+  <a href="https://github.com/MekayelAnik/ispyagentdvr-docker/forks"><img alt="GitHub Forks" src="https://img.shields.io/github/forks/MekayelAnik/ispyagentdvr-docker"></a>
+  <a href="https://github.com/MekayelAnik/ispyagentdvr-docker/issues"><img alt="GitHub Issues" src="https://img.shields.io/github/issues/MekayelAnik/ispyagentdvr-docker"></a>
+  <a href="https://github.com/MekayelAnik/ispyagentdvr-docker/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/MekayelAnik/ispyagentdvr-docker.svg"></a>
+</p>
+<p><strong>DISCLAIMER:</strong> Buy me coffee link below is NOT affiliated in anyway with the main iSpy AgentDVR. The docker image publisher is NOT affiliated with the main iSpy AgentDVR either.</p>
+<p align="center">
+<a href="https://07mekayel07.gumroad.com/coffee" target="_blank">
+<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="217" height="60">
+</a>
+</p>
 <h2>The architectures supported by this image are:</h2>
 <table>
   <thead>
@@ -40,10 +56,10 @@
 <li>  ⚠️ Base image updated to <b>Debian Trixie</b> ⚠️</li>
 <li>  ⚠️ ZSTD compression applied to reduce image size and save bandwidth. Docker Engine 23.0 or later and for Podman deployment Podman Machine v5.1 or later is required for image version 6.5.7.0 and later! ⚠️</li>
 <li> ⚠️⚠️⚠️ <b>VERY IMPORTANT:</b> TURN Server Port range is changed from <code>50000-50010</code> to <code>50000-50100</code>. Please set the range in Docker CLI or Docker Compose to <code>50000-50100⚠️⚠️⚠️</code></li>
-<li> Alhamdulillah, The <strong>ARMHF</strong> image has been fixed. Special Thanks To <strong> Sean T</strong> for fixing the underlying issues. For <strong>ARM32-bit/ARMHF</strong> devices, please download an image version greater than or equal to <strong>4.8.2.0</strong>.</li>
+<li> The <strong>ARMHF</strong> image has been fixed. For <strong>ARM32-bit/ARMHF</strong> devices, use image version <strong>4.8.2.0</strong> or newer.</li>
 <li> For GPU HW-Accelerated Encode/Decode please use version <strong>5.3.5.0 or NEWER</strong> images.</li>
 <li> ⚠️⚠️⚠️ It is <b>Discouraged</b> to use BETA on mission-critical environments!!! </li>
-<li> This image provides various versions that are available via tags. Please read the <a href="https://www.ispyconnect.com/producthistory.aspx?productid=27" rel="nofollow noopener">update information</a> carefully and exercise caution when using "older versions" tags as they tend to contain unfixed bugs. </li>
+<li> Read the <a href="https://www.ispyconnect.com/producthistory.aspx?productid=27" rel="nofollow noopener">update information</a> and use older tags with caution. </li>
 </ul>
 
 <table>
@@ -75,21 +91,20 @@
       <td>⚠️ LATEST BETA for "BETA TESTING". Backup config before trying!!! Discouraged to use on mission-critical environments!!! ⚠️</td>
     </tr>
     <tr>
-      <td align="center">6.6.5.0</td>
+      <td align="center">7.3.3.0</td>
       <td align="center">✅</td>
-      <td>"iSpy Agent DVR" Static version 6.6.5.0 image</td>
+      <td>"iSpy Agent DVR" Static version 7.3.3.0 image</td>
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
-      <td align="center">6.4.7.0-beta</td>
+      <td align="center">7.2.4.0-beta</td>
       <td align="center">⚠️</td>
-      <td>"iSpy Agent DVR" 6.4.7.0 beta release for testing</td>
+      <td>"iSpy Agent DVR" 7.2.4.0 beta release for testing</td>
       <td>⚠️ THOROUGH TESTING REQUIRED. Backup config before trying!!! Discouraged to use on mission-critical envirenments!!! ⚠️</td>
     </tr>
   </tbody>
 </table>
 <h2>Running Image :</h2>
-<p>Example snippets to get started.</p>
 <h3>docker-compose (recommended, <a href="https://itnext.io/a-beginners-guide-to-deploying-a-docker-application-to-production-using-docker-compose-de1feccd2893" rel="nofollow noopener">docs</a>) </h3>
 <pre><code>---
 services:
@@ -113,8 +128,8 @@ services:
     restart: unless-stopped
 </code></pre>
 
-<strong>Note:</strong> <p> - In the case of Raspberry Pi and other low-power ARM SBCs, please hit the WebUI URL at least 30 seconds after the container deployment. The ARM processors may require a few seconds to kick-start the needed services. Before this time, you may not get a response in the web browser. Also, at first, you may have to refresh the WebUI a couple of times for the UI to load fully.</p>
-<p> - Also, if you have a large number of cameras, the boot time will increase accordingly. So please be patient and have a look in the AgentDVR docker container log.</p>
+<strong>Note:</strong> <p> - On Raspberry Pi and other low-power ARM SBCs, wait about 30 seconds after deployment before opening WebUI, then refresh if needed.</p>
+<p> - With many cameras, startup may take longer.</p>
 
 <h3>docker cli ( <a href="https://docs.docker.com/engine/reference/commandline/cli/" rel="nofollow noopener">docs</a>) </h3>
 <pre><code>docker run -d \
@@ -137,7 +152,7 @@ services:
 <pre><code>---
 services:
   ispyagentdvr:
-    image: mekayelanik/ispyagentdvr:latest
+    image: ghcr.io/mekayelanik/ispyagentdvr:latest
     container_name: ispyagentdvr
     environment:
       - PUID=1000
@@ -164,8 +179,7 @@ networks:
   macvlan-1:
     name: macvlan-1
     external: True</code></pre>
-<p> To make macvlan work properly, you must map any valid MAC address to <code>mac_address:</code>. Also, you must map any valid IP address in your <code>ip_range</code> to <code>ipv4_address:</code>. This will be your container's IP. Then you must map your Router's Local IP Subnet to <code>subnet:</code> After that you must map your Desired Local IP range within the subnet to <code>ip_range:</code> Finally you must map your Router's LAN IP Address <code>gateway:</code>
-</p>
+<p>To make MACVLAN work, set valid values for <code>mac_address</code>, <code>ipv4_address</code>, <code>subnet</code>, <code>ip_range</code>, and <code>gateway</code>.</p>
 <p>In the case of MACVLAN, you must access the WebUI using <code>http://ipv4_address:8090</code>
 </p>
 <h2>GPU HW-Acceleration <strong>(Tested "WORKING" on images with tag 5.3.5.0 or NEWER)</strong></h2>
@@ -175,7 +189,7 @@ networks:
 <pre><code>---
 services:
   ispyagentdvr:
-    image: mekayelanik/ispyagentdvr:latest
+    image: ghcr.io/mekayelanik/ispyagentdvr:latest
     container_name: ispyagentdvr
     environment:
       - PUID=1000
@@ -392,9 +406,6 @@ containrrr/watchtower\
     </p>
   </li>
 </ul>
-<p>
-  <strong>Note:</strong> You can use <a href="https://containrrr.dev/watchtower/" rel="nofollow noopener">Watchtower</a> as a solution to automated updates of existing Docker containers. However it is discouraged to use automated updates. However, this is a useful tool for one-time manual updates of containers where you have forgotten the original parameters. In the long term, it is recommended to use <a href="https://itnext.io/a-beginners-guide-to-deploying-a-docker-application-to-production-using-docker-compose-de1feccd2893" rel="nofollow noopener">Docker Compose</a>.
-</p>
 <h3>Image Update Notifications - Diun (Docker Image Update Notifier)</h3>
 <ul>
   <li>You can also use <a href="https://crazymax.dev/diun/" rel="nofollow noopener">Diun</a> for update notifications. Other tools that automatically update containers unattended are not encouraged </li>
@@ -415,7 +426,7 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
     devices:
         - /dev/snd:/dev/snd
 </code></pre>
-<p><strong> - ARM SBCs: </strong>In the case of Raspberry Pi (Only 4 and newer can have GPU acceleration if v4l2 Encode/Decode is enabled, which is Disabled by default in RaspiOS and every trick to enable. Personally I haven't been able to enable this till now). Also, the performance of Encode/Decode on ARM is somewhat not usable. If you have a HIGH END SBC then you may research a way to pass your relative Render device and get VAAPI working. Personally, I don't possess a HIGH END ARM SBC. So I am unable to provide any instruction. If anyone gets success please let me know via GitHub. Rest assured, I will include that instruction and will give you proper credit in the GitHub.</p>
+<p><strong> - ARM SBCs: </strong>Raspberry Pi 4+ may support limited acceleration with proper host setup. Performance can vary; if you get a reliable VAAPI/VPU configuration, share it via GitHub and it can be documented with credit.</p>
 <p><strong> - Things to make sure before Submitting a issue:</strong> </p>
   <ul>
     <li>Update your <strong>Docker Engine</strong> to the latest available, specially on OSX. After updating the docker engine please check if the issue has been resolved.
@@ -424,7 +435,7 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
     </li>
     <li>If you intend to run this image on Raspberry Pi 5 then use <strong>Ubuntu or Ubuntu Server</strong> as your OS. There is a bug in Debian that fatally affects the execution of AgentDVR and many other applications that are written on .Net Core. Other Raspberry Pi doesn't have this issue at the time of writing this.
     </li>
-    <li>Make sure to have you have access to your Docker Compose File/Docker CLI command which was used to deploy your container and Logs from <code>logs.html</code> include those to your GitHub issue/Reddit post.
+    <li>When reporting issues, include your Docker Compose/Docker CLI deployment command and relevant <code>logs.html</code> output.
     </li>
   </ul>
 
@@ -444,6 +455,13 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
 <li><strong>5.8.1.0:</strong> - ⚠️ FFMPEG version bumped from 6.0.1 to 7.0.2</li> 
 <li><strong>5.8.1.0:</strong> - <code>mekayelank/ispyagentdvr</code> image is now fully backword compatible with <code>doitandbedone/ispyagentdvr</code> image. From now on, you don't have to change the directory mapping to switch from <code>doitandbedone/ispyagentdvr</code> to <code>mekayelank/ispyagentdvr</code>, <b>UNLESS you are using unRAID/Synology NAS or other GUI based container deployer. In that case, you will have to follow the contents of the documentation to deploy this image</b></li>
 </ul>
+
+<h2>Support</h2>
+<p align="center">
+<a href="https://07mekayel07.gumroad.com/coffee" target="_blank">
+<img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="217" height="60">
+</a>
+</p>
 
 <h2>Issues & Requests</h2>
 <p> To submit this Docker image specific issues or requests visit this docker image's Github Link: <a href="https://www.github.com/MekayelAnik/ispyagentdvr-docker" rel="nofollow noopener">https://www.github.com/MekayelAnik/ispyagentdvr-docker</a>
