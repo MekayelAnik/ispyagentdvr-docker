@@ -53,7 +53,7 @@ REQUIRED_DIRS=(
     "/AgentDVR/Commands"
     "/AgentDVR/Masks"
     "/AgentDVR/sounds"
-    "/AgentDVR/Models"
+    "/AgentDVR/Media/Models"
 )
 BANNER_FILE="$script_dir/banner.sh"
 AGENT_BINARY="/AgentDVR/Agent"
@@ -63,7 +63,7 @@ SOUNDS_DIR="/AgentDVR/sounds"
 MASKS_DIR="/AgentDVR/Masks"
 FIRST_RUN="/AgentDVR/FirstRun"
 CONTENT_DIR="/AgentDVR/Content"
-MODEL_DIR="/AgentDVR/Models"
+MODEL_DIR="/AgentDVR/Media/Models"
 SESSION_LOG="/AgentDVR/Media/sessionlog.txt"
 
 # Error handling function

@@ -1,6 +1,6 @@
 <h1>iSpy Agent DVR multi-arch image</h1>
 <img alt="ispyagentdvr" src="https://ispycontent.azureedge.net/img/ispy2.png">
-<p>This is an unofficial multi-aarch docker image of Agent DVR of iSpy created for multiplatform support. iSpy Agent DVR creates a local server for IP cameras to be managed. Official Website: <a href="https://www.ispyconnect.com" rel="nofollow noopener">https://www.ispyconnect.com</a>
+<p>This is an unofficial multi-arch Agent DVR image for multiplatform support. Official Website: <a href="https://www.ispyconnect.com" rel="nofollow noopener">https://www.ispyconnect.com</a>
 </p>
 <img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/mekayelanik/ispyagentdvr.svg"><img alt="Docker Stars" src="https://img.shields.io/docker/stars/mekayelanik/ispyagentdvr.svg">
 <h2>The architectures supported by this image are:</h2>
@@ -89,8 +89,8 @@
   </tbody>
 </table>
 <h2>Running Image :</h2>
-<p>Here are some example snippets to help you get started creating a container.</p>
-<h3>docker-compose (recommended, <a href="https://itnext.io/a-beginners-guide-to-deploying-a-docker-application-to-production-using-docker-compose-de1feccd2893" rel="nofollow noopener">click here for more info</a>) </h3>
+<p>Example snippets to get started.</p>
+<h3>docker-compose (recommended, <a href="https://itnext.io/a-beginners-guide-to-deploying-a-docker-application-to-production-using-docker-compose-de1feccd2893" rel="nofollow noopener">docs</a>) </h3>
 <pre><code>---
 services:
   ispyagentdvr:
@@ -104,6 +104,7 @@ services:
     volumes:
       - /path/to/config:/AgentDVR/Media/XML
       - /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media
+      - /path/to/models:/AgentDVR/Media/Models
       - /path/to/commands:/AgentDVR/Commands
     ports:
       - 8090:8090
@@ -115,7 +116,7 @@ services:
 <strong>Note:</strong> <p> - In the case of Raspberry Pi and other low-power ARM SBCs, please hit the WebUI URL at least 30 seconds after the container deployment. The ARM processors may require a few seconds to kick-start the needed services. Before this time, you may not get a response in the web browser. Also, at first, you may have to refresh the WebUI a couple of times for the UI to load fully.</p>
 <p> - Also, if you have a large number of cameras, the boot time will increase accordingly. So please be patient and have a look in the AgentDVR docker container log.</p>
 
-<h3>docker cli ( <a href="https://docs.docker.com/engine/reference/commandline/cli/" rel="nofollow noopener">click here for more info</a>) </h3>
+<h3>docker cli ( <a href="https://docs.docker.com/engine/reference/commandline/cli/" rel="nofollow noopener">docs</a>) </h3>
 <pre><code>docker run -d \
   --name=ispyagentdvr \
   -e PUID=1000 \
@@ -127,11 +128,12 @@ services:
   -p 50000-50100:50000-50100/udp \
   -v /path/to/config:/AgentDVR/Media/XML \
   -v /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media \
+  -v /path/to/models:/AgentDVR/Media/Models \
   -v /path/to/commands:/AgentDVR/Commands \
   --restart unless-stopped \
   mekayelanik/ispyagentdvr:latest
 </code></pre>
-<h3>If anyone wishes to give a dedicated Local IP to iSpy Agent DVR container using MACVLAN ( <a href="https://docs.docker.com/network/macvlan/" rel="nofollow noopener">click here for more info</a>) </h3>
+<h3>Dedicated local IP using MACVLAN ( <a href="https://docs.docker.com/network/macvlan/" rel="nofollow noopener">docs</a>) </h3>
 <pre><code>---
 services:
   ispyagentdvr:
@@ -145,6 +147,7 @@ services:
     volumes:
       - /path/to/config:/AgentDVR/Media/XML
       - /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media
+      - /path/to/models:/AgentDVR/Media/Models
       - /path/to/commands:/AgentDVR/Commands
     ports:
       - 8090:8090
@@ -167,7 +170,7 @@ networks:
 </p>
 <h2>GPU HW-Acceleration <strong>(Tested "WORKING" on images with tag 5.3.5.0 or NEWER)</strong></h2>
 <p>One must use images from 5.3.5.0 or NEWER images to get the provisioned GPU HW-Acceleration. Older images will not work. If you face any issues, please report this on GitHub of this image. The GitHub link can be found at the bottom of this page.</p>
-<h3>docker-compose (recommended, <a href="https://itnext.io/a-beginners-guide-to-deploying-a-docker-application-to-production-using-docker-compose-de1feccd2893" rel="nofollow noopener">click here for more info</a>) </h3>
+<h3>docker-compose (recommended, <a href="https://itnext.io/a-beginners-guide-to-deploying-a-docker-application-to-production-using-docker-compose-de1feccd2893" rel="nofollow noopener">docs</a>) </h3>
 <h3><strong>One must be able to pass GPU (Rendering devices) to the container as is instructed below!</strong></h3>
 <pre><code>---
 services:
@@ -182,6 +185,7 @@ services:
     volumes:
       - /path/to/config:/AgentDVR/Media/XML
       - /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media
+      - /path/to/models:/AgentDVR/Media/Models
       - /path/to/commands:/AgentDVR/Commands
     ports:
       - 8090:8090
@@ -190,7 +194,7 @@ services:
     restart: unless-stopped
 </code></pre>
 
-<h3>docker cli ( <a href="https://docs.docker.com/engine/reference/commandline/cli/" rel="nofollow noopener">click here for more info</a>) </h3>
+<h3>docker cli ( <a href="https://docs.docker.com/engine/reference/commandline/cli/" rel="nofollow noopener">docs</a>) </h3>
 <pre><code>docker run -d \
   --name=ispyagentdvr \
   -e PUID=1000 \
@@ -202,6 +206,7 @@ services:
   -p 50000-50100:50000-50100/udp \
   -v /path/to/config:/AgentDVR/Media/XML \
   -v /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media \
+  -v /path/to/models:/AgentDVR/Media/Models \
   -v /path/to/commands:/AgentDVR/Commands \
   --restart unless-stopped \
   mekayelanik/ispyagentdvr:latest</code></pre>
@@ -240,6 +245,7 @@ services:
   -p 50000-50100:50000-50100/udp \
   -v /path/to/config:/AgentDVR/Media/XML \
   -v /path/to/recordings:/AgentDVR/Media/WebServerRoot/Media \
+  -v /path/to/models:/AgentDVR/Media/Models \
   -v /path/to/commands:/AgentDVR/Commands \
   --restart unless-stopped \
 `for dev in dri dma_heap mali0 rga mpp_service \
@@ -250,7 +256,7 @@ services:
   mekayelanik/ispyagentdvr:latest</code></pre>
 <h4>DISCLAIMER: Jellyfin FFMPEG and corresponding ideas were used in this image to enable the HW-Acceleration</h4>
 <h2>Parameters</h2>
-<p>Container images are configured using parameters passed at runtime (such as those above). These parameters are separated by a colon and indicate <code>&lt;external&gt;:&lt;internal&gt;</code> respectively. For example, <code>-p 8090:80</code> would expose port <code>80</code> from inside the container to be accessible from the host's IP on port <code>8090</code> outside the container. </p>
+<p>Container images use runtime parameters. These are separated by a colon and indicate <code>&lt;external&gt;:&lt;internal&gt;</code>. For example, <code>-p 8090:80</code> exposes port <code>80</code> inside the container on host port <code>8090</code>. </p>
 <table>
   <thead>
     <tr>
@@ -312,6 +318,12 @@ services:
         <code>-v /AgentDVR/Media/WebServerRoot/Media</code>
       </td>
       <td>Location of Surveillance Recordings on disk.</td>
+    </tr>
+    <tr>
+      <td align="center">
+        <code>-v /AgentDVR/Media/Models</code>
+      </td>
+      <td>Model files location for AgentDVR.</td>
     </tr>
     <tr>
       <td align="center">
@@ -418,6 +430,7 @@ mv /path/to/recordings/video /ispyagentdvr/media/old</code></pre>
 
 <p><strong> - Major Changes</strong></p>
 <ul>
+<li><strong>7.2.0.0:</strong> - ⚠️⚠️⚠️ NEW directory mapping required for persistant AI model storage<code>/AgentDVR/Media/Models</code> ⚠️⚠️⚠️</li> 
 <li><strong>6.6.2.0:</strong> - ⚠️⚠️⚠️ Directory structure reverted to <code>/AgentDVR</code> from <code>/home/agentdvr/AgentDVR</code>. It is <b>SPECIALLY IMPORTANT</b> to correctly apply this change in unRAID, Synology NAS and other GUID based container deployer. ⚠️⚠️⚠️</li> 
 <li><strong>6.6.2.0:</strong> - ⚠️⚠️⚠️ Base image changed to <b>Debian Trixie</b> from Bookworm (mekayelanik:ispyagentdvr-trixie-slim-vlc-jellyfin-ffmpeg-7.1.1-7-intel-25.31.34666.3) ⚠️⚠️⚠️</li>
 <li><strong>6.6.2.0:</strong> - ✅ UPDATED: Intel driver Version to: 25.31.34666.3 and AMD Mesa Driver Version to: 25.2.2-1</li>
