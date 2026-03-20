@@ -17,7 +17,7 @@
   ],
   "timezone": "Asia/Dhaka",
   "schedule": [
-    "before 6am every day"
+    "before 6am"
   ],
   "prConcurrentLimit": 10,
   "prHourlyLimit": 5,
