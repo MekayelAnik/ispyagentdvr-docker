@@ -1,12 +1,11 @@
 # =============================================================================
 # Composite Action: Registry Sync
 # =============================================================================
-# Reusable action for syncing images between Docker Hub and GHCR
-# Automatically handles bidirectional sync based on image availability
+# Reusable action for syncing images from GHCR (primary) to Docker Hub (secondary)
 # =============================================================================
 
 name: 'Registry Sync'
-description: 'Synchronize Docker images between registries'
+description: 'Synchronize Docker images from GHCR to Docker Hub'
 
 inputs:
   dockerhub_repo:
@@ -22,7 +21,7 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Sync images between registries
+    - name: Sync images from GHCR to Docker Hub
       shell: bash
       env:
         DOCKERHUB_REPO: ${{ inputs.dockerhub_repo }}
@@ -37,20 +36,50 @@ runs:
           DH_EXISTS=$(skopeo inspect "docker://${dh_ref}" > /dev/null 2>&1 && echo "yes" || echo "no")
           GHCR_EXISTS=$(skopeo inspect "docker://${ghcr_ref}" > /dev/null 2>&1 && echo "yes" || echo "no")
 
-          if [ "$DH_EXISTS" == "yes" ] && [ "$GHCR_EXISTS" == "no" ]; then
-            echo "Syncing $tag: Docker Hub → GHCR"
+          if [ "$GHCR_EXISTS" == "no" ] && [ "$DH_EXISTS" == "yes" ]; then
+            echo "Syncing $tag: Docker Hub -> GHCR (backfill mode)"
             skopeo copy --all "docker://${dh_ref}" "docker://${ghcr_ref}"
-          elif [ "$DH_EXISTS" == "no" ] && [ "$GHCR_EXISTS" == "yes" ]; then
-            echo "Syncing $tag: GHCR → Docker Hub"
-            skopeo copy --all "docker://${ghcr_ref}" "docker://${dh_ref}"
-          elif [ "$DH_EXISTS" == "yes" ] && [ "$GHCR_EXISTS" == "yes" ]; then
-            echo "Tag $tag: exists in both registries - no sync needed"
-          else
+          elif [ "$GHCR_EXISTS" == "no" ] && [ "$DH_EXISTS" == "no" ]; then
             echo "Tag $tag: not found in either registry - skipping"
+            return 0
+          elif [ "$GHCR_EXISTS" == "yes" ] && [ "$DH_EXISTS" == "no" ]; then
+            echo "Syncing $tag: GHCR -> Docker Hub"
+            skopeo copy --all "docker://${ghcr_ref}" "docker://${dh_ref}"
+          else
+            GHCR_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${ghcr_ref}" 2>/dev/null || echo "")
+            DH_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${dh_ref}" 2>/dev/null || echo "")
+
+            if [ "$GHCR_DIGEST" != "$DH_DIGEST" ]; then
+              echo "Syncing $tag: digest mismatch, GHCR -> Docker Hub"
+              skopeo copy --all "docker://${ghcr_ref}" "docker://${dh_ref}"
+            else
+              echo "Tag $tag: Docker Hub already matches GHCR"
+            fi
           fi
+
+          # Verify Docker Hub now mirrors GHCR for this tag.
+          GHCR_DIGEST_FINAL=$(skopeo inspect --format '{{.Digest}}' "docker://${ghcr_ref}" 2>/dev/null || echo "")
+          DH_DIGEST_FINAL=$(skopeo inspect --format '{{.Digest}}' "docker://${dh_ref}" 2>/dev/null || echo "")
+
+          if [ -z "$GHCR_DIGEST_FINAL" ] || [ -z "$DH_DIGEST_FINAL" ]; then
+            echo "::error::Sync verification failed for $tag (missing digest from one registry)"
+            return 1
+          fi
+
+          if [ "$GHCR_DIGEST_FINAL" != "$DH_DIGEST_FINAL" ]; then
+            echo "::error::Sync verification failed for $tag (GHCR $GHCR_DIGEST_FINAL != Docker Hub $DH_DIGEST_FINAL)"
+            return 1
+          fi
+
+          echo "Verified $tag: Docker Hub matches GHCR ($GHCR_DIGEST_FINAL)"
+          return 0
         }
 
         IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
         for tag in "${TAG_ARRAY[@]}"; do
-          sync_tag "$(echo "$tag" | xargs)"
+          CLEAN_TAG="$(echo "$tag" | xargs)"
+          if [ -z "$CLEAN_TAG" ]; then
+            continue
+          fi
+          sync_tag "$CLEAN_TAG" || exit 1
         done

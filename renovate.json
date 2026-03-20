@@ -17,10 +17,14 @@
   ],
   "timezone": "Asia/Dhaka",
   "schedule": [
-    "before 6am on monday"
+    "before 6am every day"
   ],
   "prConcurrentLimit": 10,
   "prHourlyLimit": 5,
+  "automerge": true,
+  "automergeType": "pr",
+  "automergeStrategy": "squash",
+  "rebaseWhen": "behind-base-branch",
   "minimumReleaseAge": "7 days",
   "internalChecksFilter": "strict",
   "osvVulnerabilityAlerts": true,
@@ -69,6 +73,23 @@
         "/^securego\\//",
         "/^github\\/codeql/"
       ]
+    },
+    {
+      "description": "Trivy action updates immediately when available",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "aquasecurity/trivy-action"
+      ],
+      "minimumReleaseAge": null,
+      "schedule": [
+        "at any time"
+      ],
+      "prPriority": 20,
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
     },
     {
       "description": "Core GitHub Actions (checkout, setup, upload/download)",
