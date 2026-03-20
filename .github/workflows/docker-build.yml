@@ -1512,9 +1512,20 @@ jobs:
           echo "$VERSION_UNDERSCORE" > resources/build_data/version
 
           # Track stable promotion only when mark-stable produced concrete promotion outputs.
-          if [ "${{ needs.mark-stable.result }}" == "success" ] && [ -n "${{ needs.mark-stable.outputs.promoted_version }}" ] && [ -n "${{ needs.mark-stable.outputs.promoted_digest }}" ] && [ -n "${{ needs.mark-stable.outputs.promoted_at }}" ]; then
-            echo "${{ needs.mark-stable.outputs.promoted_version }}" > resources/build_data/stable-version
-            printf '{"version":"%s","digest":"%s","promoted_at":"%s"}\n' "${{ needs.mark-stable.outputs.promoted_version }}" "${{ needs.mark-stable.outputs.promoted_digest }}" "${{ needs.mark-stable.outputs.promoted_at }}" > resources/build_data/stable-state.json
+          PROMOTED_VERSION_RAW="${{ needs.mark-stable.outputs.promoted_version }}"
+          PROMOTED_DIGEST_RAW="${{ needs.mark-stable.outputs.promoted_digest }}"
+          PROMOTED_AT_RAW="${{ needs.mark-stable.outputs.promoted_at }}"
+
+          PROMOTED_VERSION="$(echo "$PROMOTED_VERSION_RAW" | xargs)"
+          PROMOTED_DIGEST="$(echo "$PROMOTED_DIGEST_RAW" | xargs)"
+          PROMOTED_AT="$(echo "$PROMOTED_AT_RAW" | xargs)"
+
+          if [ "${{ needs.mark-stable.result }}" == "success" ] && \
+             [ -n "$PROMOTED_VERSION" ] && [ "$PROMOTED_VERSION" != "null" ] && \
+             [ -n "$PROMOTED_DIGEST" ] && [ "$PROMOTED_DIGEST" != "null" ] && \
+             [ -n "$PROMOTED_AT" ] && [ "$PROMOTED_AT" != "null" ]; then
+            echo "$PROMOTED_VERSION" > resources/build_data/stable-version
+            printf '{"version":"%s","digest":"%s","promoted_at":"%s"}\n' "$PROMOTED_VERSION" "$PROMOTED_DIGEST" "$PROMOTED_AT" > resources/build_data/stable-state.json
           fi
 
           # Update .agentdvr-version (consolidated from check-agentdvr-version workflow)
