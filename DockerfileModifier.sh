@@ -47,8 +47,8 @@ RUN useradd -m -d /AgentDVR/ -s /bin/bash -u 1000 agentdvr && \
     chmod 775 /AgentDVR/ && \
     mkdir -p /AgentDVR/Commands && \
     chmod -R 777 /AgentDVR/Commands && \
-    mkdir -p /AgentDVR/Models && \
-    chmod -R 777 /AgentDVR/Models && \
+    mkdir -p /AgentDVR/Media/Models && \
+    chmod -R 777 /AgentDVR/Media/Models && \
     name="$(whoami)" && \
     echo "Adding permission for USER:root to local device (GPU) access" && \
     usermod -aG video "$name" && \
