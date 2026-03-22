@@ -744,6 +744,7 @@ jobs:
         run: |
           VERSIONS='${{ steps.determine-versions.outputs.versions_json }}'
           BETA_VERSIONS='${{ steps.fetch-releases.outputs.beta_versions }}'
+          PLATFORMS='${{ steps.set-platforms.outputs.platforms }}'
           
           # If no versions to build, output empty matrix
           if [ "$VERSIONS" == "[]" ] || [ -z "$VERSIONS" ]; then
@@ -753,12 +754,12 @@ jobs:
           fi
           
           # Generate combined matrix: [{version, platform, platform_slug, is_beta}, ...]
-          MATRIX=$(echo "$VERSIONS" | jq -c --argjson betas "$BETA_VERSIONS" '
+          MATRIX=$(echo "$VERSIONS" | jq -c --argjson betas "$BETA_VERSIONS" --arg platforms "$PLATFORMS" '
             . as $versions |
-            ["linux/amd64", "linux/arm64", "linux/arm/v7"] as $platforms |
+            ($platforms | gsub(" "; "") | split(",") | map(select(length > 0))) as $platform_list |
             [
               $versions[] as $v |
-              $platforms[] as $p |
+              $platform_list[] as $p |
               {
                 version: $v,
                 platform: $p,
