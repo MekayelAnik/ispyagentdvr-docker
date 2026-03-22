@@ -133,7 +133,7 @@ versions: 7.0.5.0-7.0.9.0
 |--------|---------|-------------|
 | `force_build` | `false` | Rebuild even if image exists |
 | `skip_existing` | `true` | Skip versions already in registries |
-| `tag_as_latest` | `false` | Also tag as `latest` |
+| `tag_as_latest` | `true` | Also tag as `latest` |
 | `run_security_scan` | `true` | Run Trivy vulnerability scan |
 | `push_to_dockerhub` | `true` | Push to Docker Hub |
 | `push_to_ghcr` | `true` | Push to GitHub Container Registry |
@@ -171,7 +171,7 @@ ZSTD compression is used for both layer compression and cache.
 
 | Option | Image |
 |--------|-------|
-| Default | `mekayelanik/ispyagentdvr-base-image:latest` |
+| Default | `mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-jellyfin-ffmpeg-7.1.3-1` |
 | trixie-slim-default-ffmpeg | `mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-default-ffmpeg` |
 | bookworm-slim-vlc-jellyfin-ffmpeg | `mekayelanik/ispyagentdvr-base-image:ispyagentdvr-bookworm-slim-vlc-jellyfin-ffmpeg` |
 | custom | User-specified base image URL |
@@ -197,6 +197,7 @@ The workflow ensures images exist in both registries:
 
 - If image exists in Docker Hub but not ghcr.io → Copy to ghcr.io
 - If image exists in ghcr.io but not Docker Hub → Copy to Docker Hub
+- If both registries already contain the same image content for a tag → Skip sync for that tag
 - Uses `skopeo copy --all` to preserve all architectures
 
 ---
