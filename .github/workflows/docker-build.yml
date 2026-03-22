@@ -1267,7 +1267,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Install skopeo
-        run: sudo apt-get update && sudo apt-get install -y skopeo
+        run: sudo apt-get update && sudo apt-get install -y skopeo jq
 
       - name: Login to registries
         uses: ./.github/actions/registry-login
