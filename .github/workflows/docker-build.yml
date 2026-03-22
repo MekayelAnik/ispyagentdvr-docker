@@ -1442,7 +1442,7 @@ jobs:
           fi
 
           # Secondary guard: explicit tracked state skip for already-promoted candidate.
-          if [ "$FORCE_PROMOTE_STABLE" != "true" ] && [ -n "$TRACKED_STABLE" ] && [ "$TRACKED_STABLE" == "$STABLE_VERSION" ] && [ -n "$TRACKED_DIGEST" ] && [ "$TRACKED_DIGEST" == "$VERSION_DIGEST" ]; then
+          if [ "$FORCE_PROMOTE_STABLE" != "true" ] && [ -n "$TRACKED_STABLE" ] && [ "$TRACKED_STABLE" == "$STABLE_VERSION" ] && [ -n "$TRACKED_DIGEST" ] && [ "$TRACKED_DIGEST" == "$VERSION_DIGEST" ] && [ "$CURRENT_STABLE" == "$TRACKED_DIGEST" ] && [ "$CURRENT_STABLE" != "none" ]; then
             echo "Already promoted $STABLE_VERSION to stable, skipping"
             echo "## Stable Promotion" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
