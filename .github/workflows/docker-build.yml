@@ -1149,42 +1149,10 @@ jobs:
           echo "Docker Hub tags: $DOCKERHUB_TAGS"
           echo "GHCR tags: $GHCR_TAGS"
 
-      - name: Create and push multi-arch manifest (Docker Hub)
-        if: github.event.inputs.push_to_dockerhub != 'false'
-        run: |
-          # Build source images list from digests
-          SOURCES=""
-          for digest_file in /tmp/digests/*; do
-            digest="sha256:$(basename $digest_file)"
-            SOURCES="$SOURCES ${{ env.DOCKERHUB_REPO }}@${digest}"
-          done
-
-          echo "Creating multi-arch manifest for Docker Hub..."
-          echo "Sources: $SOURCES"
-          echo "Tags: ${{ steps.tags.outputs.dockerhub_tags }}"
-
-          # Retry logic for transient network failures
-          for attempt in 1 2 3; do
-            echo "Attempt $attempt of 3..."
-            if docker buildx imagetools create \
-              ${{ steps.tags.outputs.dockerhub_tags }} \
-              $SOURCES; then
-              echo "Docker Hub manifest created successfully"
-              break
-            fi
-            if [ $attempt -lt 3 ]; then
-              echo "Retrying in 10 seconds..."
-              sleep 10
-            else
-              echo "Failed after 3 attempts"
-              exit 1
-            fi
-          done
-
       - name: Create and push multi-arch manifest (GHCR)
         if: github.event.inputs.push_to_ghcr != 'false'
         run: |
-          # Build source images list from digests - use GHCR as source to avoid Docker Hub rate limits
+          # Build source images list from GHCR digests (no Docker Hub rate limits)
           SOURCES=""
           for digest_file in /tmp/digests/*; do
             digest="sha256:$(basename $digest_file)"
@@ -1195,7 +1163,6 @@ jobs:
           echo "Sources: $SOURCES"
           echo "Tags: ${{ steps.tags.outputs.ghcr_tags }}"
 
-          # Retry logic for transient network failures (GHCR can be flaky)
           for attempt in 1 2 3; do
             echo "Attempt $attempt of 3..."
             if docker buildx imagetools create \
@@ -1207,6 +1174,44 @@ jobs:
             if [ $attempt -lt 3 ]; then
               echo "Retrying in 15 seconds..."
               sleep 15
+            else
+              echo "Failed after 3 attempts"
+              exit 1
+            fi
+          done
+
+      - name: Create and push multi-arch manifest (Docker Hub)
+        if: github.event.inputs.push_to_dockerhub != 'false'
+        run: |
+          # Prefer GHCR as source to avoid Docker Hub pull rate limits.
+          # Fall back to Docker Hub source only when GHCR push was disabled.
+          if [ "${{ github.event.inputs.push_to_ghcr }}" == "false" ]; then
+            SOURCE_REPO="${{ env.DOCKERHUB_REPO }}"
+          else
+            SOURCE_REPO="${{ env.GHCR_REPO }}"
+          fi
+
+          SOURCES=""
+          for digest_file in /tmp/digests/*; do
+            digest="sha256:$(basename $digest_file)"
+            SOURCES="$SOURCES ${SOURCE_REPO}@${digest}"
+          done
+
+          echo "Creating multi-arch manifest for Docker Hub (sourcing from GHCR)..."
+          echo "Sources: $SOURCES"
+          echo "Tags: ${{ steps.tags.outputs.dockerhub_tags }}"
+
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt of 3..."
+            if docker buildx imagetools create \
+              ${{ steps.tags.outputs.dockerhub_tags }} \
+              $SOURCES; then
+              echo "Docker Hub manifest created successfully"
+              break
+            fi
+            if [ $attempt -lt 3 ]; then
+              echo "Retrying in 10 seconds..."
+              sleep 10
             else
               echo "Failed after 3 attempts"
               exit 1
