@@ -919,6 +919,23 @@ jobs:
           # Output validated base image for subsequent steps
           echo "base_image=$BASE_IMAGE" >> $GITHUB_OUTPUT
 
+          # Determine which registries to push to (used by build step outputs)
+          PUSH_DH="${{ github.event.inputs.push_to_dockerhub || 'true' }}"
+          PUSH_GHCR="${{ github.event.inputs.push_to_ghcr || 'true' }}"
+          REGISTRY_NAMES=""
+          if [ "$PUSH_DH" != "false" ]; then
+            REGISTRY_NAMES="${{ env.DOCKERHUB_REPO }}"
+          fi
+          if [ "$PUSH_GHCR" != "false" ]; then
+            if [ -n "$REGISTRY_NAMES" ]; then
+              REGISTRY_NAMES="${REGISTRY_NAMES},${{ env.GHCR_REPO }}"
+            else
+              REGISTRY_NAMES="${{ env.GHCR_REPO }}"
+            fi
+          fi
+          echo "registry_names=$REGISTRY_NAMES" >> $GITHUB_OUTPUT
+          echo "Push targets: $REGISTRY_NAMES"
+
           # Generate Dockerfile
           bash DockerfileModifier.sh
 
@@ -990,8 +1007,8 @@ jobs:
             BASE_IMAGE=${{ steps.prepare.outputs.base_image }}
             AGENTDVR_VERSION=${{ matrix.version }}
             BUILDKIT_INLINE_CACHE=1
-          # Push by digest - no tags, outputs digest for manifest creation
-          outputs: type=image,name=${{ env.DOCKERHUB_REPO }},push-by-digest=true,name-canonical=true,push=true,oci-mediatypes=true,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }},force-compression=true
+          # Push by digest to enabled registries - no tags, outputs digest for manifest creation
+          outputs: type=image,"name=${{ steps.prepare.outputs.registry_names }}",push-by-digest=true,name-canonical=true,push=true,oci-mediatypes=true,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }},force-compression=true
           # Allow network access during build
           allow: network.host
           # Use BuildKit features
@@ -1059,7 +1076,7 @@ jobs:
           push_to_ghcr: ${{ github.event.inputs.push_to_ghcr || 'true' }}
 
       - name: Download all digests for version
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
           pattern: digest-${{ matrix.version }}-*
@@ -1109,7 +1126,7 @@ jobs:
           if [ "$PUSH_DOCKERHUB" != "false" ]; then
             DOCKERHUB_TAGS="-t ${{ env.DOCKERHUB_REPO }}:${VERSION_TAG}"
             DOCKERHUB_TAGS="$DOCKERHUB_TAGS -t ${{ env.DOCKERHUB_REPO }}:${VERSION_DATE_TAG}"
-            if [ "$VERSION" == "$LATEST_VERSION" ] || [ "$TAG_AS_LATEST" == "true" ]; then
+            if [ "$VERSION" == "$LATEST_VERSION" ] && [ "$TAG_AS_LATEST" != "false" ]; then
               DOCKERHUB_TAGS="$DOCKERHUB_TAGS -t ${{ env.DOCKERHUB_REPO }}:${ROLLING_TAG}"
             fi
           fi
@@ -1117,7 +1134,7 @@ jobs:
           if [ "$PUSH_GHCR" != "false" ]; then
             GHCR_TAGS="-t ${{ env.GHCR_REPO }}:${VERSION_TAG}"
             GHCR_TAGS="$GHCR_TAGS -t ${{ env.GHCR_REPO }}:${VERSION_DATE_TAG}"
-            if [ "$VERSION" == "$LATEST_VERSION" ] || [ "$TAG_AS_LATEST" == "true" ]; then
+            if [ "$VERSION" == "$LATEST_VERSION" ] && [ "$TAG_AS_LATEST" != "false" ]; then
               GHCR_TAGS="$GHCR_TAGS -t ${{ env.GHCR_REPO }}:${ROLLING_TAG}"
             fi
           fi
@@ -1167,11 +1184,11 @@ jobs:
       - name: Create and push multi-arch manifest (GHCR)
         if: github.event.inputs.push_to_ghcr != 'false'
         run: |
-          # Build source images list from digests
+          # Build source images list from digests - use GHCR as source to avoid Docker Hub rate limits
           SOURCES=""
           for digest_file in /tmp/digests/*; do
             digest="sha256:$(basename $digest_file)"
-            SOURCES="$SOURCES ${{ env.DOCKERHUB_REPO }}@${digest}"
+            SOURCES="$SOURCES ${{ env.GHCR_REPO }}@${digest}"
           done
 
           echo "Creating multi-arch manifest for GHCR..."
@@ -1362,7 +1379,8 @@ jobs:
       always() &&
       (needs.check-releases.outputs.action_type == 'mark-stable' ||
        (needs.check-releases.outputs.action_type == 'auto-check' &&
-        needs.check-releases.outputs.should_mark_stable == 'true'))
+        needs.check-releases.outputs.should_mark_stable == 'true' &&
+        needs.merge-manifest.result != 'failure'))
     runs-on: ubuntu-latest
     concurrency:
       group: docker-build-stable-promotion
