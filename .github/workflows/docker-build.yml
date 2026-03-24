@@ -1319,6 +1319,10 @@ jobs:
     concurrency:
       group: docker-build-${{ github.event.inputs.promote_tag == 'stable' && 'stable-promotion' || 'promote-image' }}
       cancel-in-progress: false
+    outputs:
+      promoted_version: ${{ steps.promote.outputs.promoted_version }}
+      promoted_digest: ${{ steps.promote.outputs.promoted_digest }}
+      promoted_at: ${{ steps.promote.outputs.promoted_at }}
 
     steps:
       - name: Validate inputs
@@ -1343,6 +1347,7 @@ jobs:
           ghcr_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Promote image
+        id: promote
         run: |
           SOURCE="${{ github.event.inputs.promote_version }}"
           TARGET="${{ github.event.inputs.promote_tag }}"
@@ -1368,6 +1373,15 @@ jobs:
             "docker://${{ env.DOCKERHUB_REPO }}:${TARGET}"
 
           echo "Successfully promoted $SOURCE to $TARGET on both registries"
+
+          # Output promotion data so update-metadata can persist tracking state
+          if [ "$TARGET" == "stable" ]; then
+            PROMOTED_DIGEST=$(skopeo inspect "docker://${{ env.GHCR_REPO }}:${SOURCE}" 2>/dev/null | jq -r '.Digest' || echo "")
+            PROMOTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            echo "promoted_version=$SOURCE" >> $GITHUB_OUTPUT
+            echo "promoted_digest=$PROMOTED_DIGEST" >> $GITHUB_OUTPUT
+            echo "promoted_at=$PROMOTED_AT" >> $GITHUB_OUTPUT
+          fi
 
           echo "## Image Promotion" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -1453,24 +1467,27 @@ jobs:
             exit 1
           fi
 
-          # Primary idempotency check: if stable already points to candidate digest, skip.
+          # Idempotency check: if GHCR stable already points to candidate digest,
+          # ensure Docker Hub is also in sync and skip the full promotion.
           if [ "$CURRENT_STABLE" == "$VERSION_DIGEST" ] && [ "$CURRENT_STABLE" != "none" ]; then
+            echo "GHCR stable tag already points to version $STABLE_VERSION"
+
+            # Ensure Docker Hub stable is also in sync (fixes partial failure from prior runs)
+            DH_STABLE=$(skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:stable" 2>/dev/null | jq -r '.Digest' || echo "none")
+            if [ "$DH_STABLE" != "$CURRENT_STABLE" ] && [ "$DH_STABLE" != "none" ] || [ "$DH_STABLE" == "none" ]; then
+              echo "Docker Hub stable is out of sync, syncing from GHCR..."
+              skopeo copy --all \
+                "docker://${{ env.GHCR_REPO }}:stable" \
+                "docker://${{ env.DOCKERHUB_REPO }}:stable" || \
+                echo "::warning::Could not sync stable tag to Docker Hub (will retry on next run)"
+            fi
+
             PROMOTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
             printf '{"version":"%s","digest":"%s","promoted_at":"%s"}\n' "$STABLE_VERSION" "$VERSION_DIGEST" "$PROMOTED_AT" > "$TRACKING_STATE_FILE"
             echo "$STABLE_VERSION" > "$TRACKING_FILE"
             echo "promoted_version=$STABLE_VERSION" >> $GITHUB_OUTPUT
             echo "promoted_digest=$VERSION_DIGEST" >> $GITHUB_OUTPUT
             echo "promoted_at=$PROMOTED_AT" >> $GITHUB_OUTPUT
-            echo "Stable tag already points to version $STABLE_VERSION"
-            exit 0
-          fi
-
-          # Secondary guard: explicit tracked state skip for already-promoted candidate.
-          if [ "$FORCE_PROMOTE_STABLE" != "true" ] && [ -n "$TRACKED_STABLE" ] && [ "$TRACKED_STABLE" == "$STABLE_VERSION" ] && [ -n "$TRACKED_DIGEST" ] && [ "$TRACKED_DIGEST" == "$VERSION_DIGEST" ] && [ "$CURRENT_STABLE" == "$TRACKED_DIGEST" ] && [ "$CURRENT_STABLE" != "none" ]; then
-            echo "Already promoted $STABLE_VERSION to stable, skipping"
-            echo "## Stable Promotion" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Already promoted **$STABLE_VERSION** to **stable** - skipping" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
 
@@ -1481,10 +1498,11 @@ jobs:
             "docker://${{ env.GHCR_REPO }}:${STABLE_VERSION}" \
             "docker://${{ env.GHCR_REPO }}:stable"
 
-          # Sync stable tag to Docker Hub from GHCR
+          # Sync stable tag to Docker Hub from GHCR (non-fatal: sync-registries will retry)
           skopeo copy --all \
             "docker://${{ env.GHCR_REPO }}:stable" \
-            "docker://${{ env.DOCKERHUB_REPO }}:stable"
+            "docker://${{ env.DOCKERHUB_REPO }}:stable" || \
+            echo "::warning::Docker Hub stable sync failed, will be fixed by sync-registries on next run"
 
           PROMOTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           printf '{"version":"%s","digest":"%s","promoted_at":"%s"}\n' "$STABLE_VERSION" "$VERSION_DIGEST" "$PROMOTED_AT" > "$TRACKING_STATE_FILE"
@@ -1504,11 +1522,12 @@ jobs:
   # ===========================================================================
   update-metadata:
     name: Update Metadata
-    needs: [check-releases, merge-manifest, sync-registries, mark-stable]
+    needs: [check-releases, merge-manifest, sync-registries, mark-stable, promote-image]
     if: |
       always() &&
       (needs.merge-manifest.result == 'success' ||
-       needs.mark-stable.result == 'success')
+       needs.mark-stable.result == 'success' ||
+       needs.promote-image.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1536,17 +1555,27 @@ jobs:
           mkdir -p resources/build_data
           echo "$VERSION_UNDERSCORE" > resources/build_data/version
 
-          # Track stable promotion only when mark-stable produced concrete promotion outputs.
-          PROMOTED_VERSION_RAW="${{ needs.mark-stable.outputs.promoted_version }}"
-          PROMOTED_DIGEST_RAW="${{ needs.mark-stable.outputs.promoted_digest }}"
-          PROMOTED_AT_RAW="${{ needs.mark-stable.outputs.promoted_at }}"
+          # Track stable promotion from either mark-stable or promote-image (to stable).
+          # Check mark-stable outputs first, then fall back to promote-image outputs.
+          PROMOTED_VERSION=""
+          PROMOTED_DIGEST=""
+          PROMOTED_AT=""
 
-          PROMOTED_VERSION="$(echo "$PROMOTED_VERSION_RAW" | xargs)"
-          PROMOTED_DIGEST="$(echo "$PROMOTED_DIGEST_RAW" | xargs)"
-          PROMOTED_AT="$(echo "$PROMOTED_AT_RAW" | xargs)"
+          if [ "${{ needs.mark-stable.result }}" == "success" ]; then
+            PROMOTED_VERSION="$(echo "${{ needs.mark-stable.outputs.promoted_version }}" | xargs)"
+            PROMOTED_DIGEST="$(echo "${{ needs.mark-stable.outputs.promoted_digest }}" | xargs)"
+            PROMOTED_AT="$(echo "${{ needs.mark-stable.outputs.promoted_at }}" | xargs)"
+          fi
 
-          if [ "${{ needs.mark-stable.result }}" == "success" ] && \
-             [ -n "$PROMOTED_VERSION" ] && [ "$PROMOTED_VERSION" != "null" ] && \
+          if [ -z "$PROMOTED_VERSION" ] || [ "$PROMOTED_VERSION" == "null" ]; then
+            if [ "${{ needs.promote-image.result }}" == "success" ]; then
+              PROMOTED_VERSION="$(echo "${{ needs.promote-image.outputs.promoted_version }}" | xargs)"
+              PROMOTED_DIGEST="$(echo "${{ needs.promote-image.outputs.promoted_digest }}" | xargs)"
+              PROMOTED_AT="$(echo "${{ needs.promote-image.outputs.promoted_at }}" | xargs)"
+            fi
+          fi
+
+          if [ -n "$PROMOTED_VERSION" ] && [ "$PROMOTED_VERSION" != "null" ] && \
              [ -n "$PROMOTED_DIGEST" ] && [ "$PROMOTED_DIGEST" != "null" ] && \
              [ -n "$PROMOTED_AT" ] && [ "$PROMOTED_AT" != "null" ]; then
             echo "$PROMOTED_VERSION" > resources/build_data/stable-version
