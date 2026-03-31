@@ -1396,11 +1396,11 @@ jobs:
     needs: [check-releases, merge-manifest]
     if: |
       always() &&
+      needs.check-releases.result == 'success' &&
       (
         needs.check-releases.outputs.action_type == 'promote-image' ||
         needs.check-releases.outputs.action_type == 'force-promote-latest' ||
-        (needs.check-releases.outputs.action_type == 'auto-check' && needs.check-releases.outputs.latest_version != '') ||
-        (needs.build-versions.result == 'success' || true)
+        (needs.check-releases.outputs.action_type == 'auto-check' && needs.check-releases.outputs.latest_version != '')
       )
     runs-on: ubuntu-latest
     concurrency:
@@ -1569,6 +1569,7 @@ jobs:
     needs: [check-releases, merge-manifest, sync-registries, promote-image]
     if: |
       always() &&
+      needs.check-releases.result == 'success' &&
       (
         needs.check-releases.outputs.action_type == 'promote-stable' ||
         needs.check-releases.outputs.action_type == 'force-promote-stable' ||
@@ -1979,6 +1980,7 @@ jobs:
 
       - name: Sync README to Docker Hub
         uses: peter-evans/dockerhub-description@v5
+        continue-on-error: true
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
