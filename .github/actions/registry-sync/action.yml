@@ -3,12 +3,13 @@
 # Path: .github/actions/registry-sync/action.yml
 # =============================================================================
 # Reusable action for syncing images from GHCR (primary) to Docker Hub (secondary).
-# Uses skopeo for manifest-preserving multi-arch copies.
+# Uses crane for lightweight HEAD-only digest checks and server-side copies (OCI mount API).
+# Falls back to skopeo when crane is unavailable.
 #
 # Features:
-#   - Inspect caching (each ref inspected at most once)
+#   - Digest caching via crane digest (HEAD-only, no body transfer)
 #   - Rate-limit tolerance (429 detection with progressive backoff)
-#   - Raw manifest digest comparison (sha256sum of manifest JSON)
+#   - crane copy with skopeo fallback for reliability
 #
 # Sync logic (GHCR primary):
 #   * Tag in GHCR only  -> copy GHCR -> DH
@@ -17,12 +18,12 @@
 #   * Tag in neither    -> skip (not yet built)
 #
 # Prerequisites:
-#   * skopeo must be installed on the runner
+#   * crane and skopeo must be installed on the runner
 #   * Both registries must already be logged in (use registry-login action first)
 # =============================================================================
 
 name: 'Registry Sync'
-description: 'One-way sync of Docker images from GHCR (primary) to Docker Hub (secondary) using skopeo'
+description: 'One-way sync of Docker images from GHCR (primary) to Docker Hub (secondary) using crane (with skopeo fallback)'
 
 inputs:
   dockerhub_repo:
@@ -35,7 +36,7 @@ inputs:
     description: 'Comma-separated list of tags to sync (e.g., latest,stable,1.8.0)'
     required: true
   retry_count:
-    description: 'Number of skopeo copy retries on transient failures (default: 3)'
+    description: 'Number of copy retries on transient failures (default: 3)'
     required: false
     default: '3'
 
@@ -66,43 +67,42 @@ runs:
         SKIPPED_TAGS=""
         FAILED_TAGS=""
 
-        # -- Inspect cache (avoid redundant skopeo inspect calls) --------
-        declare -A _INSPECT_CACHE=()
+        # -- Digest cache (crane digest: single HEAD request) --------
+        declare -A _DIGEST_CACHE=()
 
-        cached_skopeo_inspect() {
+        cached_digest() {
           local ref="$1"
-          if [[ -n "${_INSPECT_CACHE[$ref]+x}" ]]; then
-            echo "${_INSPECT_CACHE[$ref]}"
+          if [[ -n "${_DIGEST_CACHE[$ref]+x}" ]]; then
+            echo "${_DIGEST_CACHE[$ref]}"
             return 0
           fi
           local result
-          if result=$(skopeo inspect "docker://${ref}" 2>/dev/null); then
-            _INSPECT_CACHE[$ref]="$result"
+          # crane digest: HEAD-only, no body transfer
+          if result=$(crane digest "${ref}" 2>/dev/null); then
+            _DIGEST_CACHE[$ref]="$result"
+            echo "$result"
+            return 0
+          fi
+          # Fallback to skopeo
+          if result=$(skopeo inspect "docker://${ref}" 2>/dev/null | jq -r '.Digest'); then
+            [[ -n "$result" && "$result" != "null" ]] || return 1
+            _DIGEST_CACHE[$ref]="$result"
             echo "$result"
             return 0
           fi
           return 1
         }
 
-        cached_skopeo_inspect_raw() {
-          local ref="raw:$1"
-          if [[ -n "${_INSPECT_CACHE[$ref]+x}" ]]; then
-            echo "${_INSPECT_CACHE[$ref]}"
-            return 0
-          fi
-          local result
-          if result=$(skopeo inspect --raw "docker://$1" 2>/dev/null); then
-            _INSPECT_CACHE[$ref]="$result"
-            echo "$result"
-            return 0
-          fi
-          return 1
+        # Check if a tag exists in a registry (HEAD-only)
+        tag_exists() {
+          local ref="$1"
+          crane digest "${ref}" >/dev/null 2>&1 || skopeo inspect "docker://${ref}" >/dev/null 2>&1
         }
 
-        # -- skopeo_copy_with_retry description src dst ------------------
-        # Copies a multi-arch image (--all) with progressive-backoff retries.
-        # Detects Docker Hub rate limits (429/toomanyrequests) and backs off.
-        skopeo_copy_with_retry() {
+        # -- crane_copy_with_retry description src dst ------------------
+        # Copies using crane copy (server-side, OCI mount API) with progressive-backoff retries.
+        # Falls back to skopeo on crane failure. Detects Docker Hub rate limits.
+        crane_copy_with_retry() {
           local description="$1"
           local src="$2"
           local dst="$3"
@@ -113,7 +113,7 @@ runs:
 
           while [[ $attempt -le $max ]]; do
             echo "  [attempt $attempt/$max] $description"
-            if skopeo copy --all "docker://${src}" "docker://${dst}" 2>"$err_file"; then
+            if crane copy "${src}" "${dst}" 2>"$err_file"; then
               echo "  Success"
               rm -f "$err_file"
               return 0
@@ -124,6 +124,13 @@ runs:
               local wait=$(( attempt * 60 ))
               echo "  ::warning::Rate limited -- backing off ${wait}s..."
             else
+              # Fallback to skopeo on crane failure
+              echo "  crane failed, trying skopeo..."
+              if skopeo copy --all "docker://${src}" "docker://${dst}" 2>"$err_file"; then
+                echo "  Success (skopeo fallback)"
+                rm -f "$err_file"
+                return 0
+              fi
               local wait=$(( attempt * 15 ))
               echo "  Failed -- retrying in ${wait}s..."
               cat "$err_file" >&2
@@ -140,8 +147,7 @@ runs:
         # Invalidate cache for a specific ref (after writes)
         invalidate_cache() {
           local ref="$1"
-          unset '_INSPECT_CACHE[$ref]'
-          unset '_INSPECT_CACHE[raw:$ref]'
+          unset '_DIGEST_CACHE[$ref]'
         }
 
         # -- sync_tag tag ------------------------------------------------
@@ -153,13 +159,13 @@ runs:
           echo "-- Tag: $tag --"
 
           local DH_EXISTS GC_EXISTS
-          DH_EXISTS=$(cached_skopeo_inspect "${dh_ref}" &>/dev/null && echo yes || echo no)
-          GC_EXISTS=$(cached_skopeo_inspect "${gc_ref}" &>/dev/null && echo yes || echo no)
+          DH_EXISTS=$(tag_exists "${dh_ref}" && echo yes || echo no)
+          GC_EXISTS=$(tag_exists "${gc_ref}" && echo yes || echo no)
           echo "  Docker Hub: $DH_EXISTS | GHCR: $GC_EXISTS"
 
           if [[ "$DH_EXISTS" == no && "$GC_EXISTS" == yes ]]; then
             echo "  -> Syncing GHCR -> Docker Hub"
-            if skopeo_copy_with_retry "$tag: GHCR->DH" "$gc_ref" "$dh_ref"; then
+            if crane_copy_with_retry "$tag: GHCR->DH" "$gc_ref" "$dh_ref"; then
               invalidate_cache "$dh_ref"
               SYNCED_TAGS="$SYNCED_TAGS $tag(GHCR->DH)"
             else
@@ -167,13 +173,13 @@ runs:
             fi
 
           elif [[ "$DH_EXISTS" == yes && "$GC_EXISTS" == yes ]]; then
-            # Both present -- check if digests match via raw manifest hash
-            DH_DIG=$(cached_skopeo_inspect_raw "${dh_ref}" | sha256sum | cut -d' ' -f1 || echo "")
-            GC_DIG=$(cached_skopeo_inspect_raw "${gc_ref}" | sha256sum | cut -d' ' -f1 || echo "")
+            # Both present -- compare digests via HEAD requests (no body transfer)
+            DH_DIG=$(cached_digest "${dh_ref}" || echo "")
+            GC_DIG=$(cached_digest "${gc_ref}" || echo "")
 
             if [[ -n "$DH_DIG" && -n "$GC_DIG" && "$DH_DIG" != "$GC_DIG" ]]; then
               echo "  -> Digest mismatch -- re-syncing GHCR -> Docker Hub"
-              if skopeo_copy_with_retry "$tag: GHCR->DH (re-sync)" "$gc_ref" "$dh_ref"; then
+              if crane_copy_with_retry "$tag: GHCR->DH (re-sync)" "$gc_ref" "$dh_ref"; then
                 invalidate_cache "$dh_ref"
                 SYNCED_TAGS="$SYNCED_TAGS $tag(re-sync GHCR->DH)"
               else
