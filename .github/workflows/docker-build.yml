@@ -350,7 +350,13 @@ jobs:
           sudo apt-get install -y curl jq skopeo
           # Install crane for lightweight HEAD-only registry operations
           CRANE_VERSION="$(curl -fsSL https://api.github.com/repos/google/go-containerregistry/releases/latest | jq -r .tag_name)"
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64)        CRANE_ARCH="x86_64" ;;
+            aarch64|arm64) CRANE_ARCH="arm64" ;;
+            *)             echo "crane: unsupported arch $ARCH, skipping"; exit 0 ;;
+          esac
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${CRANE_ARCH}.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
 
       - name: Login to registries
         uses: ./.github/actions/registry-login
@@ -843,7 +849,8 @@ jobs:
                 version: $v,
                 platform: $p,
                 platform_slug: ($p | gsub("/"; "-")),
-                is_beta: (if $betas[$v] == true then "true" else "false" end)
+                is_beta: (if $betas[$v] == true then "true" else "false" end),
+                runner: (if $p == "linux/amd64" then "ubuntu-latest" else "ubuntu-24.04-arm" end)
               }
             ]
           ')
@@ -876,7 +883,7 @@ jobs:
     name: Build ${{ matrix.version }} (${{ matrix.platform_slug }})
     needs: check-releases
     if: needs.check-releases.outputs.should_build == 'true' && needs.check-releases.outputs.build_matrix != ''
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
@@ -902,7 +909,7 @@ jobs:
           df -h
 
       - name: Set up QEMU for cross-platform builds
-        if: matrix.platform != 'linux/amd64'
+        if: matrix.platform == 'linux/arm/v7'
         uses: docker/setup-qemu-action@v4
         with:
           platforms: ${{ matrix.platform }}
@@ -1399,7 +1406,13 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y skopeo jq
           CRANE_VERSION="$(curl -fsSL https://api.github.com/repos/google/go-containerregistry/releases/latest | jq -r .tag_name)"
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64)        CRANE_ARCH="x86_64" ;;
+            aarch64|arm64) CRANE_ARCH="arm64" ;;
+            *)             echo "crane: unsupported arch $ARCH, skipping"; exit 0 ;;
+          esac
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${CRANE_ARCH}.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
 
       - name: Login to registries
         uses: ./.github/actions/registry-login
@@ -1456,7 +1469,13 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y skopeo
           CRANE_VERSION="$(curl -fsSL https://api.github.com/repos/google/go-containerregistry/releases/latest | jq -r .tag_name)"
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64)        CRANE_ARCH="x86_64" ;;
+            aarch64|arm64) CRANE_ARCH="arm64" ;;
+            *)             echo "crane: unsupported arch $ARCH, skipping"; exit 0 ;;
+          esac
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${CRANE_ARCH}.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
 
       - name: Login to registries
         uses: ./.github/actions/registry-login
@@ -1632,7 +1651,13 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y skopeo jq
           CRANE_VERSION="$(curl -fsSL https://api.github.com/repos/google/go-containerregistry/releases/latest | jq -r .tag_name)"
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
+          ARCH="$(uname -m)"
+          case "$ARCH" in
+            x86_64)        CRANE_ARCH="x86_64" ;;
+            aarch64|arm64) CRANE_ARCH="arm64" ;;
+            *)             echo "crane: unsupported arch $ARCH, skipping"; exit 0 ;;
+          esac
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${CRANE_ARCH}.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
 
       - name: Login to registries
         uses: ./.github/actions/registry-login
