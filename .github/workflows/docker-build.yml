@@ -850,7 +850,7 @@ jobs:
                 platform: $p,
                 platform_slug: ($p | gsub("/"; "-")),
                 is_beta: (if $betas[$v] == true then "true" else "false" end),
-                runner: (if $p == "linux/amd64" then "ubuntu-latest" else "ubuntu-24.04-arm" end)
+                runner: (if $p == "linux/amd64" then "ubuntu-latest" else ("ubuntu-" + ($ENV.ARM_RUNNER_VER // "24.04") + "-arm") end)
               }
             ]
           ')
