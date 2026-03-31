@@ -317,7 +317,7 @@ jobs:
           if [ -n "${{ github.event.inputs.compression_level }}" ]; then
             echo "level=${{ github.event.inputs.compression_level }}" >> $GITHUB_OUTPUT
           else
-            echo "level=3" >> $GITHUB_OUTPUT
+            echo "level=22" >> $GITHUB_OUTPUT
           fi
           echo "ZSTD compression level: ${{ github.event.inputs.compression_level || '22' }}"
 
