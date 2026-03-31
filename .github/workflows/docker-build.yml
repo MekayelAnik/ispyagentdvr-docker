@@ -838,8 +838,9 @@ jobs:
             exit 0
           fi
           
-          # Generate combined matrix: [{version, platform, platform_slug, is_beta}, ...]
-          MATRIX=$(echo "$VERSIONS" | jq -c --argjson betas "$BETA_VERSIONS" --arg platforms "$PLATFORMS" '
+          # Generate combined matrix: [{version, platform, platform_slug, is_beta, runner}, ...]
+          ARM_RUNNER="ubuntu-${{ vars.RUNNER_UBUNTU_VERSION || '24.04' }}-arm"
+          MATRIX=$(echo "$VERSIONS" | jq -c --argjson betas "$BETA_VERSIONS" --arg platforms "$PLATFORMS" --arg arm_runner "$ARM_RUNNER" '
             . as $versions |
             ($platforms | gsub(" "; "") | split(",") | map(select(length > 0))) as $platform_list |
             [
@@ -850,7 +851,7 @@ jobs:
                 platform: $p,
                 platform_slug: ($p | gsub("/"; "-")),
                 is_beta: (if $betas[$v] == true then "true" else "false" end),
-                runner: (if $p == "linux/amd64" then "ubuntu-latest" else ("ubuntu-" + ($ENV.ARM_RUNNER_VER // "24.04") + "-arm") end)
+                runner: (if $p == "linux/amd64" then "ubuntu-latest" else $arm_runner end)
               }
             ]
           ')
