@@ -1,163 +1,240 @@
 # =============================================================================
 # Composite Action: Registry Sync
+# Path: .github/actions/registry-sync/action.yml
 # =============================================================================
-# Reusable action for syncing images from GHCR (primary) to Docker Hub (secondary)
+# Reusable action for syncing images from GHCR (primary) to Docker Hub (secondary).
+# Uses skopeo for manifest-preserving multi-arch copies.
+#
+# Features:
+#   - Inspect caching (each ref inspected at most once)
+#   - Rate-limit tolerance (429 detection with progressive backoff)
+#   - Raw manifest digest comparison (sha256sum of manifest JSON)
+#
+# Sync logic (GHCR primary):
+#   * Tag in GHCR only  -> copy GHCR -> DH
+#   * Tag in both       -> if digest mismatch, copy GHCR -> DH
+#   * Tag in DH only    -> warning (primary missing)
+#   * Tag in neither    -> skip (not yet built)
+#
+# Prerequisites:
+#   * skopeo must be installed on the runner
+#   * Both registries must already be logged in (use registry-login action first)
 # =============================================================================
 
 name: 'Registry Sync'
-description: 'Synchronize Docker images from GHCR to Docker Hub'
+description: 'One-way sync of Docker images from GHCR (primary) to Docker Hub (secondary) using skopeo'
 
 inputs:
   dockerhub_repo:
-    description: 'Docker Hub repository (e.g., username/image)'
+    description: 'Docker Hub repository (e.g., username/image -- no tag)'
     required: true
   ghcr_repo:
-    description: 'GHCR repository (e.g., ghcr.io/owner/image)'
+    description: 'GHCR repository (e.g., ghcr.io/owner/image -- no tag)'
     required: true
   tags:
-    description: 'Comma-separated list of tags to sync'
+    description: 'Comma-separated list of tags to sync (e.g., latest,stable,1.8.0)'
     required: true
+  retry_count:
+    description: 'Number of skopeo copy retries on transient failures (default: 3)'
+    required: false
+    default: '3'
+
+outputs:
+  synced_tags:
+    description: 'Space-separated list of tags that were actually synced'
+    value: ${{ steps.sync.outputs.synced_tags }}
+  skipped_tags:
+    description: 'Space-separated list of tags skipped (already in both registries)'
+    value: ${{ steps.sync.outputs.skipped_tags }}
+  failed_tags:
+    description: 'Space-separated list of tags that failed to sync'
+    value: ${{ steps.sync.outputs.failed_tags }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Sync images from GHCR to Docker Hub
+    - name: Sync images between registries
+      id: sync
       shell: bash
       env:
         DOCKERHUB_REPO: ${{ inputs.dockerhub_repo }}
-        GHCR_REPO: ${{ inputs.ghcr_repo }}
-        TAGS: ${{ inputs.tags }}
+        GHCR_REPO:      ${{ inputs.ghcr_repo }}
+        TAGS:           ${{ inputs.tags }}
+        RETRY_COUNT:    ${{ inputs.retry_count }}
       run: |
-        get_child_digest_set() {
-          local ref=$1
-          local raw digests
+        SYNCED_TAGS=""
+        SKIPPED_TAGS=""
+        FAILED_TAGS=""
 
-          if ! command -v jq >/dev/null 2>&1; then
-            echo ""
+        # -- Inspect cache (avoid redundant skopeo inspect calls) --------
+        declare -A _INSPECT_CACHE=()
+
+        cached_skopeo_inspect() {
+          local ref="$1"
+          if [[ -n "${_INSPECT_CACHE[$ref]+x}" ]]; then
+            echo "${_INSPECT_CACHE[$ref]}"
             return 0
           fi
-
-          raw=$(skopeo inspect --raw "docker://${ref}" 2>/dev/null || true)
-          if [ -z "$raw" ]; then
-            echo ""
+          local result
+          if result=$(skopeo inspect "docker://${ref}" 2>/dev/null); then
+            _INSPECT_CACHE[$ref]="$result"
+            echo "$result"
             return 0
           fi
-
-          # Multi-arch index: compare child manifest digests instead of top-level digest,
-          # which can differ across registries due to reserialization.
-          digests=$(echo "$raw" | jq -r 'if .manifests then .manifests[].digest else empty end' 2>/dev/null | sort -u | tr '\n' ',' | sed 's/,$//')
-          if [ -n "$digests" ]; then
-            echo "$digests"
-            return 0
-          fi
-
-          # Single-image manifest fallback.
-          echo "$raw" | jq -r 'if .config.digest then .config.digest else empty end' 2>/dev/null
+          return 1
         }
 
-        get_version_label() {
-          local ref=$1
-          local version
-          version=$(skopeo inspect --format '{{ index .Labels "org.opencontainers.image.version" }}' "docker://${ref}" 2>/dev/null || true)
-          version=$(echo "$version" | sed 's/<no value>//g' | xargs)
-          echo "$version"
+        cached_skopeo_inspect_raw() {
+          local ref="raw:$1"
+          if [[ -n "${_INSPECT_CACHE[$ref]+x}" ]]; then
+            echo "${_INSPECT_CACHE[$ref]}"
+            return 0
+          fi
+          local result
+          if result=$(skopeo inspect --raw "docker://$1" 2>/dev/null); then
+            _INSPECT_CACHE[$ref]="$result"
+            echo "$result"
+            return 0
+          fi
+          return 1
         }
 
-        sync_tag() {
-          local tag=$1
-          local dh_ref="${DOCKERHUB_REPO}:${tag}"
-          local ghcr_ref="${GHCR_REPO}:${tag}"
+        # -- skopeo_copy_with_retry description src dst ------------------
+        # Copies a multi-arch image (--all) with progressive-backoff retries.
+        # Detects Docker Hub rate limits (429/toomanyrequests) and backs off.
+        skopeo_copy_with_retry() {
+          local description="$1"
+          local src="$2"
+          local dst="$3"
+          local max=${RETRY_COUNT:-3}
+          local attempt=1
+          local err_file
+          err_file="$(mktemp)"
 
-          DH_EXISTS=$(skopeo inspect "docker://${dh_ref}" > /dev/null 2>&1 && echo "yes" || echo "no")
-          GHCR_EXISTS=$(skopeo inspect "docker://${ghcr_ref}" > /dev/null 2>&1 && echo "yes" || echo "no")
-
-          if [ "$GHCR_EXISTS" == "no" ] && [ "$DH_EXISTS" == "yes" ]; then
-            echo "Syncing $tag: Docker Hub -> GHCR (backfill mode)"
-            skopeo copy --all "docker://${dh_ref}" "docker://${ghcr_ref}"
-          elif [ "$GHCR_EXISTS" == "no" ] && [ "$DH_EXISTS" == "no" ]; then
-            echo "Tag $tag: not found in either registry - skipping"
-            return 0
-          elif [ "$GHCR_EXISTS" == "yes" ] && [ "$DH_EXISTS" == "no" ]; then
-            echo "Syncing $tag: GHCR -> Docker Hub"
-            skopeo copy --all "docker://${ghcr_ref}" "docker://${dh_ref}"
-          else
-            GHCR_CHILD_SET=$(get_child_digest_set "$ghcr_ref")
-            DH_CHILD_SET=$(get_child_digest_set "$dh_ref")
-
-            if [ -n "$GHCR_CHILD_SET" ] && [ -n "$DH_CHILD_SET" ] && [ "$GHCR_CHILD_SET" == "$DH_CHILD_SET" ]; then
-              echo "Tag $tag: child manifests already match across registries - skipping"
+          while [[ $attempt -le $max ]]; do
+            echo "  [attempt $attempt/$max] $description"
+            if skopeo copy --all "docker://${src}" "docker://${dst}" 2>"$err_file"; then
+              echo "  Success"
+              rm -f "$err_file"
               return 0
             fi
 
-            GHCR_VERSION=$(get_version_label "$ghcr_ref")
-            DH_VERSION=$(get_version_label "$dh_ref")
-
-            if [ -n "$GHCR_VERSION" ] && [ -n "$DH_VERSION" ] && [ "$GHCR_VERSION" == "$DH_VERSION" ]; then
-              echo "Tag $tag: already points to version $GHCR_VERSION in both registries - skipping"
-              return 0
-            fi
-
-            GHCR_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${ghcr_ref}" 2>/dev/null || echo "")
-            DH_DIGEST=$(skopeo inspect --format '{{.Digest}}' "docker://${dh_ref}" 2>/dev/null || echo "")
-
-            if [ "$GHCR_DIGEST" != "$DH_DIGEST" ]; then
-              echo "Syncing $tag: digest mismatch, GHCR -> Docker Hub"
-              skopeo copy --all "docker://${ghcr_ref}" "docker://${dh_ref}"
+            # Detect rate limiting -- use longer backoff
+            if grep -qiE '429|toomanyrequests|rate limit' "$err_file"; then
+              local wait=$(( attempt * 60 ))
+              echo "  ::warning::Rate limited -- backing off ${wait}s..."
             else
-              echo "Tag $tag: Docker Hub already matches GHCR"
+              local wait=$(( attempt * 15 ))
+              echo "  Failed -- retrying in ${wait}s..."
+              cat "$err_file" >&2
             fi
-          fi
+            sleep "$wait"
+            (( attempt++ ))
+          done
 
-          # Verify Docker Hub now mirrors GHCR for this tag.
-          # Use minimal API calls to avoid Docker Hub rate limits.
-          GHCR_CHILD_SET_FINAL=$(get_child_digest_set "$ghcr_ref")
-          DH_CHILD_SET_FINAL=$(get_child_digest_set "$dh_ref")
-
-          if [ -n "$GHCR_CHILD_SET_FINAL" ] && [ -n "$DH_CHILD_SET_FINAL" ]; then
-            if [ "$GHCR_CHILD_SET_FINAL" != "$DH_CHILD_SET_FINAL" ]; then
-              echo "::error::Sync verification failed for $tag (child manifest digests differ between GHCR and Docker Hub)"
-              return 1
-            fi
-
-            echo "Verified $tag: Docker Hub matches GHCR child manifest set"
-            return 0
-          fi
-
-          # If child digest comparison was inconclusive (e.g. rate-limited API response),
-          # fall back to version label or digest comparison.
-          GHCR_VERSION_FINAL=$(get_version_label "$ghcr_ref")
-          DH_VERSION_FINAL=$(get_version_label "$dh_ref")
-
-          if [ -n "$GHCR_VERSION_FINAL" ] && [ -n "$DH_VERSION_FINAL" ]; then
-            if [ "$GHCR_VERSION_FINAL" != "$DH_VERSION_FINAL" ]; then
-              echo "::error::Sync verification failed for $tag (GHCR version $GHCR_VERSION_FINAL != Docker Hub version $DH_VERSION_FINAL)"
-              return 1
-            fi
-
-            echo "Verified $tag: Docker Hub matches GHCR version ($GHCR_VERSION_FINAL)"
-            return 0
-          fi
-
-          # If we can't verify due to rate limits or missing data, trust the copy.
-          # skopeo copy --all returns non-zero on failure, so reaching here means the
-          # copy itself succeeded.
-          echo "::warning::Could not fully verify sync for $tag (registry API returned incomplete data, likely rate-limited). Treating as synced since copy completed successfully."
-          return 0
+          echo "  All $max attempts failed: $description"
+          rm -f "$err_file"
+          return 1
         }
 
+        # Invalidate cache for a specific ref (after writes)
+        invalidate_cache() {
+          local ref="$1"
+          unset '_INSPECT_CACHE[$ref]'
+          unset '_INSPECT_CACHE[raw:$ref]'
+        }
+
+        # -- sync_tag tag ------------------------------------------------
+        sync_tag() {
+          local tag="$1"
+          local dh_ref="${DOCKERHUB_REPO}:${tag}"
+          local gc_ref="${GHCR_REPO}:${tag}"
+
+          echo "-- Tag: $tag --"
+
+          local DH_EXISTS GC_EXISTS
+          DH_EXISTS=$(cached_skopeo_inspect "${dh_ref}" &>/dev/null && echo yes || echo no)
+          GC_EXISTS=$(cached_skopeo_inspect "${gc_ref}" &>/dev/null && echo yes || echo no)
+          echo "  Docker Hub: $DH_EXISTS | GHCR: $GC_EXISTS"
+
+          if [[ "$DH_EXISTS" == no && "$GC_EXISTS" == yes ]]; then
+            echo "  -> Syncing GHCR -> Docker Hub"
+            if skopeo_copy_with_retry "$tag: GHCR->DH" "$gc_ref" "$dh_ref"; then
+              invalidate_cache "$dh_ref"
+              SYNCED_TAGS="$SYNCED_TAGS $tag(GHCR->DH)"
+            else
+              FAILED_TAGS="$FAILED_TAGS $tag"
+            fi
+
+          elif [[ "$DH_EXISTS" == yes && "$GC_EXISTS" == yes ]]; then
+            # Both present -- check if digests match via raw manifest hash
+            DH_DIG=$(cached_skopeo_inspect_raw "${dh_ref}" | sha256sum | cut -d' ' -f1 || echo "")
+            GC_DIG=$(cached_skopeo_inspect_raw "${gc_ref}" | sha256sum | cut -d' ' -f1 || echo "")
+
+            if [[ -n "$DH_DIG" && -n "$GC_DIG" && "$DH_DIG" != "$GC_DIG" ]]; then
+              echo "  -> Digest mismatch -- re-syncing GHCR -> Docker Hub"
+              if skopeo_copy_with_retry "$tag: GHCR->DH (re-sync)" "$gc_ref" "$dh_ref"; then
+                invalidate_cache "$dh_ref"
+                SYNCED_TAGS="$SYNCED_TAGS $tag(re-sync GHCR->DH)"
+              else
+                FAILED_TAGS="$FAILED_TAGS $tag"
+              fi
+            else
+              echo "  Already in sync -- skipping"
+              SKIPPED_TAGS="$SKIPPED_TAGS $tag"
+            fi
+
+          elif [[ "$DH_EXISTS" == yes && "$GC_EXISTS" == no ]]; then
+            echo "  ::warning::GHCR missing while Docker Hub has tag -- skipping (primary missing)"
+            FAILED_TAGS="$FAILED_TAGS $tag(ghcr-missing)"
+
+          else
+            echo "  Not found in either registry -- skipping"
+            SKIPPED_TAGS="$SKIPPED_TAGS $tag(not-found)"
+          fi
+        }
+
+        # -- Process tags sequentially -----------------------------------
         IFS=',' read -ra TAG_ARRAY <<< "$TAGS"
-        declare -A SEEN_TAGS
         for tag in "${TAG_ARRAY[@]}"; do
-          CLEAN_TAG="$(echo "$tag" | xargs)"
-          if [ -z "$CLEAN_TAG" ]; then
-            continue
-          fi
-
-          if [ -n "${SEEN_TAGS[$CLEAN_TAG]}" ]; then
-            echo "Tag $CLEAN_TAG: duplicate in input list - skipping duplicate"
-            continue
-          fi
-          SEEN_TAGS[$CLEAN_TAG]=1
-
-          sync_tag "$CLEAN_TAG" || exit 1
+          tag=$(echo "$tag" | xargs)   # trim whitespace
+          [[ -z "$tag" ]] && continue
+          sync_tag "$tag"
         done
+
+        # -- Outputs -----------------------------------------------------
+        echo "synced_tags=${SYNCED_TAGS# }"  >> "$GITHUB_OUTPUT"
+        echo "skipped_tags=${SKIPPED_TAGS# }" >> "$GITHUB_OUTPUT"
+        echo "failed_tags=${FAILED_TAGS# }"   >> "$GITHUB_OUTPUT"
+
+        echo ""
+        echo "=== Sync Summary ==="
+        echo "Synced:  ${SYNCED_TAGS:-none}"
+        echo "Skipped: ${SKIPPED_TAGS:-none}"
+        echo "Failed:  ${FAILED_TAGS:-none}"
+
+        # Fail the step if any tag failed
+        [[ -n "${FAILED_TAGS// }" ]] && exit 1 || exit 0
+
+    - name: Write sync summary
+      if: always()
+      shell: bash
+      run: |
+        write_rows() {
+          local status="$1"
+          local values="$2"
+          local t
+
+          for t in $values; do
+            [[ -z "$t" ]] && continue
+            echo "| $t | $status |" >> "$GITHUB_STEP_SUMMARY"
+          done
+        }
+
+        echo "## Registry Sync: ${{ inputs.dockerhub_repo }}" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Tag(s) | Status |"                              >> "$GITHUB_STEP_SUMMARY"
+        echo "|---|---|"                                         >> "$GITHUB_STEP_SUMMARY"
+
+        write_rows "Synced"  "${{ steps.sync.outputs.synced_tags }}"
+        write_rows "Skipped" "${{ steps.sync.outputs.skipped_tags }}"
+        write_rows "Failed"  "${{ steps.sync.outputs.failed_tags }}"
