@@ -913,20 +913,39 @@ jobs:
           driver-opts: |
             image=moby/buildkit:master
             network=host
-          buildkitd-flags: --debug --allow-insecure-entitlement network.host
-          # Ultra-optimized BuildKit configuration
+          buildkitd-flags: --allow-insecure-entitlement network.host
           buildkitd-config-inline: |
+            # DNS: faster resolution via Cloudflare + Google (host network bypasses Docker DNS)
+            [dns]
+              nameservers = ["1.1.1.1", "8.8.8.8"]
+              options = ["ndots:0", "attempts:2", "timeout:3"]
+
+            # History: disabled on ephemeral CI runners (no value in keeping build history)
+            [history]
+              maxAge = 0
+              maxEntries = 0
+
             [worker.oci]
               max-parallelism = 4
               gc = true
-              gckeepstorage = 20000000000
+              # Modern GC config (replaces deprecated gckeepstorage)
+              # GHA runners have ~14GB free — keep GC thresholds realistic
+              reservedSpace = "2GB"
+              maxUsedSpace = "12GB"
+              minFreeSpace = "2GB"
+              # Reuse CNI network namespaces across build steps (avoids alloc/release overhead)
+              cniPoolSize = 16
+              # First policy: keep source checkouts and cache mounts for 24h (CI runners are ephemeral)
               [[worker.oci.gcpolicy]]
-                keepBytes = 20000000000
-                keepDuration = 604800
+                keepBytes = 4000000000
+                keepDuration = 86400
                 filters = ["type==source.local", "type==exec.cachemount", "type==source.git.checkout"]
+              # Catch-all policy: aggressive cleanup since GHA runners are ephemeral
               [[worker.oci.gcpolicy]]
                 all = true
-                keepBytes = 50000000000
+                keepBytes = 8000000000
+
+            # Docker Hub mirror: avoids DH rate limits on base image pulls
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
 
