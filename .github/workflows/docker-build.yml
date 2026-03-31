@@ -317,7 +317,7 @@ jobs:
           if [ -n "${{ github.event.inputs.compression_level }}" ]; then
             echo "level=${{ github.event.inputs.compression_level }}" >> $GITHUB_OUTPUT
           else
-            echo "level=22" >> $GITHUB_OUTPUT
+            echo "level=3" >> $GITHUB_OUTPUT
           fi
           echo "ZSTD compression level: ${{ github.event.inputs.compression_level || '22' }}"
 
@@ -1077,7 +1077,6 @@ jobs:
             type=registry,ref=${{ env.GHCR_REPO }}:${{ steps.cache-ref.outputs.cache_tag }}
             type=gha,scope=build-${{ matrix.version }}-${{ matrix.platform_slug }}
           cache-to: |
-            type=registry,ref=${{ env.GHCR_REPO }}:${{ steps.cache-ref.outputs.cache_tag }},mode=max,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }}
             type=gha,scope=build-${{ matrix.version }}-${{ matrix.platform_slug }},mode=max,compression=zstd,compression-level=${{ needs.check-releases.outputs.compression_level }}
           # Security attestations
           provenance: mode=max
