@@ -191,12 +191,79 @@ env:
   # Base image update check: set to 'true' to enable automatic rebuilds when base image changes
   UPDATE_BASE_IMAGE_ENABLED: ${{ vars.UPDATE_BASE_IMAGE_ENABLED || 'false' }}
 
+permissions:
+  contents: write
+  packages: write
+  security-events: write
+
 jobs:
+  # ===========================================================================
+  # Job 0: Quick state check — skip pipeline if nothing changed
+  # ===========================================================================
+  quick-check:
+    name: Quick state check
+    runs-on: ubuntu-latest
+    outputs:
+      should_continue: ${{ steps.state.outputs.should_continue }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check pipeline state
+        id: state
+        env:
+          RELEASE_URL: ${{ env.RELEASE_URL }}
+        run: |
+          FORCE="${{ github.event.inputs.force_build }}"
+          ACTION="${{ github.event.inputs.action || 'auto-check' }}"
+
+          # Non-auto-check actions always continue
+          if [[ "$ACTION" != "auto-check" ]]; then
+            echo "should_continue=true" >> "$GITHUB_OUTPUT"
+            echo "Action '$ACTION' always runs"
+            exit 0
+          fi
+
+          # Force build always continues
+          if [[ "$FORCE" == "true" ]]; then
+            echo "should_continue=true" >> "$GITHUB_OUTPUT"
+            echo "Force build requested"
+            exit 0
+          fi
+
+          # Fetch current latest version from upstream (lightweight curl + grep)
+          CURRENT_VERSION=""
+          if CURRENT_VERSION=$(curl -sf "$RELEASE_URL" | grep -oP '<td[^>]*>\d+\.\d+\.\d+\.\d+</td>' | head -1 | sed 's/<[^>]*>//g'); then
+            echo "Current upstream version: $CURRENT_VERSION"
+          else
+            echo "::warning::Could not fetch upstream version -- continuing pipeline"
+            echo "should_continue=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Try to read last-built version from pipeline-state orphan branch
+          LAST_VERSION=""
+          if git fetch origin pipeline-state --depth=1 2>/dev/null; then
+            LAST_VERSION=$(git show origin/pipeline-state:last-built-version 2>/dev/null || echo "")
+          fi
+
+          if [[ -n "$LAST_VERSION" && "$LAST_VERSION" == "$CURRENT_VERSION" ]]; then
+            echo "should_continue=false" >> "$GITHUB_OUTPUT"
+            echo "Pipeline state shows version $CURRENT_VERSION already built -- skipping"
+          else
+            echo "should_continue=true" >> "$GITHUB_OUTPUT"
+            echo "New version detected (last: ${LAST_VERSION:-none}, current: $CURRENT_VERSION)"
+          fi
+
   # ===========================================================================
   # Job 1: Check for new releases and validate requested versions
   # ===========================================================================
   check-releases:
     name: Check Releases & Validate Versions
+    needs: quick-check
+    if: needs.quick-check.outputs.should_continue == 'true'
     runs-on: ubuntu-latest
     outputs:
       versions_to_build: ${{ steps.determine-versions.outputs.versions }}
@@ -1354,32 +1421,91 @@ jobs:
 
           echo "Promoting version $SOURCE to $TARGET..."
 
+          # -- Inspect cache (avoid redundant API calls) --------
+          declare -A _INSPECT_CACHE=()
+          cached_inspect() {
+            local ref="$1"
+            if [[ -n "${_INSPECT_CACHE[$ref]+x}" ]]; then
+              echo "${_INSPECT_CACHE[$ref]}"
+              return 0
+            fi
+            local result
+            if result=$(skopeo inspect "docker://${ref}" 2>/dev/null); then
+              _INSPECT_CACHE[$ref]="$result"
+              echo "$result"
+              return 0
+            fi
+            return 1
+          }
+
+          # -- Rate-limit tolerant copy --------
+          skopeo_copy_rl() {
+            local desc="$1" src="$2" dst="$3"
+            local err_file; err_file="$(mktemp)"
+            for attempt in 1 2 3 4 5; do
+              echo "  [attempt $attempt/5] $desc"
+              if skopeo copy --all "docker://${src}" "docker://${dst}" 2>"$err_file"; then
+                rm -f "$err_file"; return 0
+              fi
+              if grep -qiE '429|toomanyrequests|rate limit' "$err_file"; then
+                local wait=$(( attempt * 30 ))
+                echo "  ::warning::Rate limited -- backing off ${wait}s"
+              else
+                local wait=$(( attempt * 10 ))
+                cat "$err_file" >&2
+              fi
+              sleep "$wait"
+            done
+            rm -f "$err_file"; return 1
+          }
+
           # Check source exists in primary registry (GHCR)
-          if ! skopeo inspect "docker://${{ env.GHCR_REPO }}:${SOURCE}" > /dev/null 2>&1; then
+          SOURCE_INSPECT=$(cached_inspect "${{ env.GHCR_REPO }}:${SOURCE}") || {
             echo "::error::Source version $SOURCE not found in GHCR"
             exit 1
+          }
+          SOURCE_DIGEST=$(echo "$SOURCE_INSPECT" | jq -r '.Digest')
+
+          # Early-exit: check if target already points to same digest on GHCR
+          TARGET_DIGEST=""
+          if TARGET_INSPECT=$(cached_inspect "${{ env.GHCR_REPO }}:${TARGET}" 2>/dev/null); then
+            TARGET_DIGEST=$(echo "$TARGET_INSPECT" | jq -r '.Digest')
           fi
 
-          # Promote on GHCR
-          echo "Promoting on GHCR..."
-          skopeo copy --all \
-            "docker://${{ env.GHCR_REPO }}:${SOURCE}" \
-            "docker://${{ env.GHCR_REPO }}:${TARGET}"
+          if [[ "$SOURCE_DIGEST" == "$TARGET_DIGEST" && -n "$TARGET_DIGEST" ]]; then
+            echo "GHCR :${TARGET} already points to $SOURCE (digest: $SOURCE_DIGEST)"
 
-          # Sync promoted tag to Docker Hub from GHCR (GHCR is primary)
-          echo "Syncing promoted tag to Docker Hub from GHCR..."
-          skopeo copy --all \
-            "docker://${{ env.GHCR_REPO }}:${TARGET}" \
-            "docker://${{ env.DOCKERHUB_REPO }}:${TARGET}"
+            # Ensure Docker Hub is also in sync
+            DH_DIGEST=""
+            if DH_INSPECT=$(cached_inspect "${{ env.DOCKERHUB_REPO }}:${TARGET}" 2>/dev/null); then
+              DH_DIGEST=$(echo "$DH_INSPECT" | jq -r '.Digest')
+            fi
+            if [[ "$DH_DIGEST" != "$SOURCE_DIGEST" ]]; then
+              echo "Docker Hub out of sync -- syncing from GHCR..."
+              skopeo_copy_rl "$TARGET: GHCR->DH" "${{ env.GHCR_REPO }}:${TARGET}" "${{ env.DOCKERHUB_REPO }}:${TARGET}" || \
+                echo "::warning::Could not sync $TARGET to Docker Hub (will retry on next run)"
+            fi
+          else
+            # Promote on GHCR first
+            echo "Promoting on GHCR..."
+            skopeo_copy_rl "$SOURCE->$TARGET (GHCR)" "${{ env.GHCR_REPO }}:${SOURCE}" "${{ env.GHCR_REPO }}:${TARGET}" || {
+              echo "::error::Failed to promote on GHCR after retries"
+              exit 1
+            }
 
-          echo "Successfully promoted $SOURCE to $TARGET on both registries"
+            # Sync promoted tag to Docker Hub from GHCR (GHCR is primary)
+            echo "Syncing promoted tag to Docker Hub from GHCR..."
+            skopeo_copy_rl "$TARGET: GHCR->DH" "${{ env.GHCR_REPO }}:${TARGET}" "${{ env.DOCKERHUB_REPO }}:${TARGET}" || \
+              echo "::warning::Docker Hub sync failed -- sync-registries will retry on next run"
+          fi
 
-          # Output promotion data so update-metadata can persist tracking state
+          echo "Successfully promoted $SOURCE to $TARGET"
+
+          # Output promotion data for state tracking
           if [ "$TARGET" == "stable" ]; then
-            PROMOTED_DIGEST=$(skopeo inspect "docker://${{ env.GHCR_REPO }}:${SOURCE}" 2>/dev/null | jq -r '.Digest' || echo "")
             PROMOTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
             echo "promoted_version=$SOURCE" >> $GITHUB_OUTPUT
-            echo "promoted_digest=$PROMOTED_DIGEST" >> $GITHUB_OUTPUT
+            echo "promoted_digest=$SOURCE_DIGEST" >> $GITHUB_OUTPUT
             echo "promoted_at=$PROMOTED_AT" >> $GITHUB_OUTPUT
           fi
 
@@ -1430,8 +1556,6 @@ jobs:
         run: |
           STABLE_VERSION="${{ needs.check-releases.outputs.stable_version }}"
           FORCE_PROMOTE_STABLE="${{ github.event.inputs.force_promote_stable }}"
-          TRACKING_FILE="resources/build_data/stable-version"
-          TRACKING_STATE_FILE="resources/build_data/stable-state.json"
 
           echo "promoted_version=" >> $GITHUB_OUTPUT
           echo "promoted_digest=" >> $GITHUB_OUTPUT
@@ -1442,49 +1566,97 @@ jobs:
             exit 0
           fi
 
-          mkdir -p resources/build_data
+          # -- Inspect cache --------
+          declare -A _INSPECT_CACHE=()
+          cached_inspect() {
+            local ref="$1"
+            if [[ -n "${_INSPECT_CACHE[$ref]+x}" ]]; then
+              echo "${_INSPECT_CACHE[$ref]}"; return 0
+            fi
+            local result
+            if result=$(skopeo inspect "docker://${ref}" 2>/dev/null); then
+              _INSPECT_CACHE[$ref]="$result"; echo "$result"; return 0
+            fi
+            return 1
+          }
 
-          TRACKED_STABLE=""
-          TRACKED_DIGEST=""
-          if [ -f "$TRACKING_STATE_FILE" ]; then
-            TRACKED_STABLE=$(jq -r '.version // empty' "$TRACKING_STATE_FILE" 2>/dev/null || echo "")
-            TRACKED_DIGEST=$(jq -r '.digest // empty' "$TRACKING_STATE_FILE" 2>/dev/null || echo "")
-          elif [ -f "$TRACKING_FILE" ]; then
-            TRACKED_STABLE=$(cat "$TRACKING_FILE" 2>/dev/null || echo "")
+          # -- Rate-limit tolerant copy --------
+          skopeo_copy_rl() {
+            local desc="$1" src="$2" dst="$3"
+            local err_file; err_file="$(mktemp)"
+            for attempt in 1 2 3 4 5; do
+              echo "  [attempt $attempt/5] $desc"
+              if skopeo copy --all "docker://${src}" "docker://${dst}" 2>"$err_file"; then
+                rm -f "$err_file"; return 0
+              fi
+              if grep -qiE '429|toomanyrequests|rate limit' "$err_file"; then
+                local wait=$(( attempt * 60 ))
+                echo "  ::warning::Rate limited -- backing off ${wait}s"
+              else
+                local wait=$(( attempt * 15 ))
+                cat "$err_file" >&2
+              fi
+              sleep "$wait"
+            done
+            rm -f "$err_file"; return 1
+          }
+
+          # -- 5-day rule check via pipeline-state branch --------
+          if [[ "$FORCE_PROMOTE_STABLE" != "true" ]]; then
+            LATEST_VERSION_SINCE=""
+            if git fetch origin pipeline-state --depth=1 2>/dev/null; then
+              LATEST_VERSION_SINCE=$(git show origin/pipeline-state:latest-version-since 2>/dev/null || echo "")
+            fi
+
+            if [[ -n "$LATEST_VERSION_SINCE" ]]; then
+              SINCE_EPOCH=$(date -d "$LATEST_VERSION_SINCE" +%s 2>/dev/null || echo "0")
+              NOW_EPOCH=$(date +%s)
+              DAYS_AS_LATEST=$(( (NOW_EPOCH - SINCE_EPOCH) / 86400 ))
+              echo "Version $STABLE_VERSION has been latest for $DAYS_AS_LATEST days (since $LATEST_VERSION_SINCE)"
+
+              if (( DAYS_AS_LATEST < 5 )); then
+                echo "Version has been latest for less than 5 days -- skipping stable promotion"
+                exit 0
+              fi
+            else
+              echo "::warning::No latest-version-since in pipeline-state -- falling back to release date check"
+              # Fall through to the release-date-based check already done in check-releases
+            fi
           fi
 
           echo "Checking if stable tag needs update..."
 
-          # Get digests from primary registry (GHCR)
-          CURRENT_STABLE=$(skopeo inspect "docker://${{ env.GHCR_REPO }}:stable" 2>/dev/null | jq -r '.Digest' || echo "none")
-          VERSION_DIGEST=$(skopeo inspect "docker://${{ env.GHCR_REPO }}:${STABLE_VERSION}" 2>/dev/null | jq -r '.Digest' || echo "none")
+          # Get digests from primary registry (GHCR) -- single inspect per ref
+          VERSION_INSPECT=$(cached_inspect "${{ env.GHCR_REPO }}:${STABLE_VERSION}") || {
+            echo "::error::Could not resolve candidate $STABLE_VERSION in GHCR"
+            exit 1
+          }
+          VERSION_DIGEST=$(echo "$VERSION_INSPECT" | jq -r '.Digest')
+
+          CURRENT_STABLE="none"
+          if STABLE_INSPECT=$(cached_inspect "${{ env.GHCR_REPO }}:stable" 2>/dev/null); then
+            CURRENT_STABLE=$(echo "$STABLE_INSPECT" | jq -r '.Digest')
+          fi
 
           echo "Current stable digest: $CURRENT_STABLE"
           echo "Version $STABLE_VERSION digest: $VERSION_DIGEST"
 
-          if [ -z "$VERSION_DIGEST" ] || [ "$VERSION_DIGEST" == "none" ]; then
-            echo "::error::Could not resolve digest for candidate $STABLE_VERSION in GHCR"
-            exit 1
-          fi
+          # Idempotency check: if GHCR stable already points to candidate,
+          # just ensure Docker Hub is also in sync.
+          if [[ "$CURRENT_STABLE" == "$VERSION_DIGEST" && "$CURRENT_STABLE" != "none" ]]; then
+            echo "GHCR stable already points to version $STABLE_VERSION"
 
-          # Idempotency check: if GHCR stable already points to candidate digest,
-          # ensure Docker Hub is also in sync and skip the full promotion.
-          if [ "$CURRENT_STABLE" == "$VERSION_DIGEST" ] && [ "$CURRENT_STABLE" != "none" ]; then
-            echo "GHCR stable tag already points to version $STABLE_VERSION"
-
-            # Ensure Docker Hub stable is also in sync (fixes partial failure from prior runs)
-            DH_STABLE=$(skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:stable" 2>/dev/null | jq -r '.Digest' || echo "none")
-            if [ "$DH_STABLE" != "$CURRENT_STABLE" ] && [ "$DH_STABLE" != "none" ] || [ "$DH_STABLE" == "none" ]; then
-              echo "Docker Hub stable is out of sync, syncing from GHCR..."
-              skopeo copy --all \
-                "docker://${{ env.GHCR_REPO }}:stable" \
-                "docker://${{ env.DOCKERHUB_REPO }}:stable" || \
-                echo "::warning::Could not sync stable tag to Docker Hub (will retry on next run)"
+            DH_STABLE="none"
+            if DH_INSPECT=$(cached_inspect "${{ env.DOCKERHUB_REPO }}:stable" 2>/dev/null); then
+              DH_STABLE=$(echo "$DH_INSPECT" | jq -r '.Digest')
+            fi
+            if [[ "$DH_STABLE" != "$CURRENT_STABLE" ]]; then
+              echo "Docker Hub stable out of sync -- syncing from GHCR..."
+              skopeo_copy_rl "stable: GHCR->DH" "${{ env.GHCR_REPO }}:stable" "${{ env.DOCKERHUB_REPO }}:stable" || \
+                echo "::warning::Could not sync stable to Docker Hub (will retry on next run)"
             fi
 
             PROMOTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-            printf '{"version":"%s","digest":"%s","promoted_at":"%s"}\n' "$STABLE_VERSION" "$VERSION_DIGEST" "$PROMOTED_AT" > "$TRACKING_STATE_FILE"
-            echo "$STABLE_VERSION" > "$TRACKING_FILE"
             echo "promoted_version=$STABLE_VERSION" >> $GITHUB_OUTPUT
             echo "promoted_digest=$VERSION_DIGEST" >> $GITHUB_OUTPUT
             echo "promoted_at=$PROMOTED_AT" >> $GITHUB_OUTPUT
@@ -1494,19 +1666,18 @@ jobs:
           echo "Marking version $STABLE_VERSION as stable..."
 
           # Promote on GHCR first
-          skopeo copy --all \
-            "docker://${{ env.GHCR_REPO }}:${STABLE_VERSION}" \
-            "docker://${{ env.GHCR_REPO }}:stable"
+          skopeo_copy_rl "$STABLE_VERSION->stable (GHCR)" \
+            "${{ env.GHCR_REPO }}:${STABLE_VERSION}" "${{ env.GHCR_REPO }}:stable" || {
+            echo "::error::Failed to promote stable on GHCR"
+            exit 1
+          }
 
-          # Sync stable tag to Docker Hub from GHCR (non-fatal: sync-registries will retry)
-          skopeo copy --all \
-            "docker://${{ env.GHCR_REPO }}:stable" \
-            "docker://${{ env.DOCKERHUB_REPO }}:stable" || \
-            echo "::warning::Docker Hub stable sync failed, will be fixed by sync-registries on next run"
+          # Sync to Docker Hub from GHCR (non-fatal)
+          skopeo_copy_rl "stable: GHCR->DH" \
+            "${{ env.GHCR_REPO }}:stable" "${{ env.DOCKERHUB_REPO }}:stable" || \
+            echo "::warning::Docker Hub stable sync failed -- sync-registries will retry"
 
           PROMOTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          printf '{"version":"%s","digest":"%s","promoted_at":"%s"}\n' "$STABLE_VERSION" "$VERSION_DIGEST" "$PROMOTED_AT" > "$TRACKING_STATE_FILE"
-          echo "$STABLE_VERSION" > "$TRACKING_FILE"
           echo "promoted_version=$STABLE_VERSION" >> $GITHUB_OUTPUT
           echo "promoted_digest=$VERSION_DIGEST" >> $GITHUB_OUTPUT
           echo "promoted_at=$PROMOTED_AT" >> $GITHUB_OUTPUT
@@ -1518,7 +1689,7 @@ jobs:
           echo "Version **$STABLE_VERSION** has been marked as **stable**" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
-  # Job 6: Update repository metadata
+  # Job 6: Update repository metadata (main branch)
   # ===========================================================================
   update-metadata:
     name: Update Metadata
@@ -1556,7 +1727,6 @@ jobs:
           echo "$VERSION_UNDERSCORE" > resources/build_data/version
 
           # Track stable promotion from either mark-stable or promote-image (to stable).
-          # Check mark-stable outputs first, then fall back to promote-image outputs.
           PROMOTED_VERSION=""
           PROMOTED_DIGEST=""
           PROMOTED_AT=""
@@ -1582,7 +1752,7 @@ jobs:
             printf '{"version":"%s","digest":"%s","promoted_at":"%s"}\n' "$PROMOTED_VERSION" "$PROMOTED_DIGEST" "$PROMOTED_AT" > resources/build_data/stable-state.json
           fi
 
-          # Update .agentdvr-version (consolidated from check-agentdvr-version workflow)
+          # Update .agentdvr-version
           echo "$LATEST_VERSION" > .agentdvr-version
 
           echo "Updated metadata files"
@@ -1604,22 +1774,83 @@ jobs:
 
             [skip ci]"
 
-            # Metadata updates are non-critical; avoid failing the workflow on push races.
             for attempt in 1 2 3; do
               echo "Push attempt ${attempt}/3"
-
               if git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin HEAD:"${GITHUB_REF_NAME}"; then
                 echo "Metadata push succeeded"
                 break
               fi
-
               git rebase --abort 2>/dev/null || true
-
               if [ "$attempt" -eq 3 ]; then
                 echo "::warning::Could not push metadata after retries due to concurrent updates."
                 exit 0
               fi
-
               sleep 3
             done
           fi
+
+  # ===========================================================================
+  # Job 7: Update pipeline state (orphan branch for quick-check)
+  # ===========================================================================
+  update-state:
+    name: Update Pipeline State
+    runs-on: ubuntu-latest
+    needs: [check-releases, merge-manifest, sync-registries]
+    if: |
+      always() &&
+      needs.check-releases.result == 'success' &&
+      (needs.check-releases.outputs.action_type == 'auto-check' ||
+       needs.merge-manifest.result == 'success')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write pipeline state
+        run: |
+          LATEST_VERSION="${{ needs.check-releases.outputs.latest_version }}"
+          NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          # Read previous state before switching branches
+          PREV_VERSION=""
+          PREV_LATEST_SINCE=""
+          if git fetch origin pipeline-state --depth=1 2>/dev/null; then
+            PREV_VERSION=$(git show origin/pipeline-state:last-built-version 2>/dev/null || echo "")
+            PREV_LATEST_SINCE=$(git show origin/pipeline-state:latest-version-since 2>/dev/null || echo "")
+          fi
+
+          # Determine latest-version-since: reset if version changed, preserve if same
+          if [[ "$LATEST_VERSION" != "$PREV_VERSION" || -z "$PREV_LATEST_SINCE" ]]; then
+            LATEST_SINCE="$NOW"
+            echo "Version changed (${PREV_VERSION:-none} -> $LATEST_VERSION) -- resetting latest-version-since to $NOW"
+          else
+            LATEST_SINCE="$PREV_LATEST_SINCE"
+            echo "Version unchanged ($LATEST_VERSION) -- preserving latest-version-since=$LATEST_SINCE"
+          fi
+
+          # Create or update the pipeline-state orphan branch
+          git checkout pipeline-state 2>/dev/null || \
+            git checkout --orphan pipeline-state
+
+          # Clean working tree for orphan branch
+          git rm -rf --ignore-unmatch . > /dev/null 2>&1 || true
+
+          echo "$LATEST_VERSION" > last-built-version
+          echo "$NOW"             > last-built-time
+          echo "$LATEST_SINCE"    > latest-version-since
+
+          git add last-built-version last-built-time latest-version-since
+          if ! git diff --cached --quiet; then
+            git -c user.name="github-actions[bot]" \
+                -c user.email="github-actions[bot]@users.noreply.github.com" \
+                commit -m "pipeline-state: built $LATEST_VERSION (latest_since=$LATEST_SINCE)"
+            git push origin pipeline-state
+          else
+            echo "No changes to pipeline state -- skipping commit"
+          fi
+
+          echo "Updated pipeline-state branch with version $LATEST_VERSION, latest-version-since=$LATEST_SINCE"
