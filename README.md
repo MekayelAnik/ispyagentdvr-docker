@@ -76,7 +76,7 @@
       <td align="center">stable</td>
       <td align="center">✅</td>
       <td>"iSpy Agent DVR" Most Stable image to date</td>
-      <td>Tested "WORKING". An image will be made "stable" if an image remains "latest" for at least 7 days</td>
+      <td>Tested "WORKING". An image will be made "stable" if an image remains "latest" for at least 5 days</td>
     </tr>
     <tr>
       <td align="center">latest</td>

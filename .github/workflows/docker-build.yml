@@ -47,14 +47,16 @@ on:
           - 'auto-check'
           - 'build-versions'
           - 'promote-image'
+          - 'force-promote-latest'
+          - 'promote-stable'
+          - 'force-promote-stable'
           - 'sync-registries'
-          - 'mark-stable'
         default: 'auto-check'
 
       # --- Version Build Options ---
       versions:
         description: |
-          Versions to build (for build-versions action)
+          Versions to build (build-versions) or promote (force-promote-latest)
           Examples:
             - Single: 7.0.9.0
             - Multiple: 7.0.5.0,7.0.6.0,7.0.7.0
@@ -122,12 +124,6 @@ on:
         type: boolean
         default: true
 
-      force_promote_stable:
-        description: 'Force promote latest non-beta candidate to stable (bypasses 5-day rule and skip checks)'
-        required: false
-        type: boolean
-        default: false
-
       push_to_dockerhub:
         description: 'Push to Docker Hub registry'
         required: false
@@ -190,6 +186,12 @@ env:
   DEFAULT_BASE_IMAGE: ${{ vars.DEFAULT_BASE_IMAGE || 'mekayelanik/ispyagentdvr-base-image:ispyagentdvr-trixie-slim-jellyfin-ffmpeg-7.1.3-1' }}
   # Base image update check: set to 'true' to enable automatic rebuilds when base image changes
   UPDATE_BASE_IMAGE_ENABLED: ${{ vars.UPDATE_BASE_IMAGE_ENABLED || 'false' }}
+  # BuildKit concurrency and log tuning
+  EXPORT_CACHE_CONCURRENCY: '4'
+  EXPORT_LAYERS_CONCURRENCY: '4'
+  BUILDKIT_STEP_LOG_MAX_SIZE: '50000000'
+  BUILDKIT_STEP_LOG_MAX_SPEED: '100000000'
+  BUILDKIT_PROGRESS: 'plain'
 
 permissions:
   contents: write
@@ -650,7 +652,11 @@ jobs:
       - name: Check for 5-day stable promotion
         id: check-stable
         run: |
-          FORCE_PROMOTE_STABLE="${{ github.event.inputs.force_promote_stable }}"
+          ACTION="${{ steps.set-action.outputs.action }}"
+          FORCE_PROMOTE_STABLE="false"
+          if [[ "$ACTION" == "force-promote-stable" ]]; then
+            FORCE_PROMOTE_STABLE="true"
+          fi
 
           # Find latest non-beta release candidate (do not reset when latest release is beta)
           CANDIDATE_VERSION=""
@@ -799,7 +805,7 @@ jobs:
               fi
               ;;
 
-            "promote-image"|"sync-registries"|"mark-stable")
+            "promote-image"|"force-promote-latest"|"promote-stable"|"force-promote-stable"|"sync-registries")
               echo "versions=" >> $GITHUB_OUTPUT
               echo "versions_json=[]" >> $GITHUB_OUTPUT
               echo "should_build=false" >> $GITHUB_OUTPUT
@@ -1220,7 +1226,27 @@ jobs:
       - name: Create and push multi-arch manifest (GHCR)
         if: github.event.inputs.push_to_ghcr != 'false'
         run: |
-          # Build source images list from GHCR digests (no Docker Hub rate limits)
+          # Rate-limit aware retry helper
+          imagetools_create_rl() {
+            local desc="$1"; shift
+            local err_file; err_file="$(mktemp)"
+            for attempt in 1 2 3 4 5; do
+              echo "[attempt $attempt/5] $desc"
+              if docker buildx imagetools create "$@" 2>"$err_file"; then
+                rm -f "$err_file"; return 0
+              fi
+              if grep -qiE '429|toomanyrequests|rate limit' "$err_file"; then
+                local wait=$(( attempt * 30 ))
+                echo "::warning::Rate limited -- backing off ${wait}s"
+              else
+                local wait=$(( attempt * 10 ))
+                cat "$err_file" >&2
+              fi
+              sleep "$wait"
+            done
+            rm -f "$err_file"; return 1
+          }
+
           SOURCES=""
           for digest_file in /tmp/digests/*; do
             digest="sha256:$(basename $digest_file)"
@@ -1228,31 +1254,34 @@ jobs:
           done
 
           echo "Creating multi-arch manifest for GHCR..."
-          echo "Sources: $SOURCES"
-          echo "Tags: ${{ steps.tags.outputs.ghcr_tags }}"
-
-          for attempt in 1 2 3; do
-            echo "Attempt $attempt of 3..."
-            if docker buildx imagetools create \
-              ${{ steps.tags.outputs.ghcr_tags }} \
-              $SOURCES; then
-              echo "GHCR manifest created successfully"
-              break
-            fi
-            if [ $attempt -lt 3 ]; then
-              echo "Retrying in 15 seconds..."
-              sleep 15
-            else
-              echo "Failed after 3 attempts"
-              exit 1
-            fi
-          done
+          imagetools_create_rl "GHCR manifest" \
+            ${{ steps.tags.outputs.ghcr_tags }} \
+            $SOURCES
 
       - name: Create and push multi-arch manifest (Docker Hub)
         if: github.event.inputs.push_to_dockerhub != 'false'
         run: |
-          # Prefer GHCR as source to avoid Docker Hub pull rate limits.
-          # Fall back to Docker Hub source only when GHCR push was disabled.
+          imagetools_create_rl() {
+            local desc="$1"; shift
+            local err_file; err_file="$(mktemp)"
+            for attempt in 1 2 3 4 5; do
+              echo "[attempt $attempt/5] $desc"
+              if docker buildx imagetools create "$@" 2>"$err_file"; then
+                rm -f "$err_file"; return 0
+              fi
+              if grep -qiE '429|toomanyrequests|rate limit' "$err_file"; then
+                local wait=$(( attempt * 30 ))
+                echo "::warning::Rate limited -- backing off ${wait}s"
+              else
+                local wait=$(( attempt * 10 ))
+                cat "$err_file" >&2
+              fi
+              sleep "$wait"
+            done
+            rm -f "$err_file"; return 1
+          }
+
+          # Prefer GHCR as source to avoid Docker Hub pull rate limits
           if [ "${{ github.event.inputs.push_to_ghcr }}" == "false" ]; then
             SOURCE_REPO="${{ env.DOCKERHUB_REPO }}"
           else
@@ -1266,25 +1295,9 @@ jobs:
           done
 
           echo "Creating multi-arch manifest for Docker Hub (sourcing from GHCR)..."
-          echo "Sources: $SOURCES"
-          echo "Tags: ${{ steps.tags.outputs.dockerhub_tags }}"
-
-          for attempt in 1 2 3; do
-            echo "Attempt $attempt of 3..."
-            if docker buildx imagetools create \
-              ${{ steps.tags.outputs.dockerhub_tags }} \
-              $SOURCES; then
-              echo "Docker Hub manifest created successfully"
-              break
-            fi
-            if [ $attempt -lt 3 ]; then
-              echo "Retrying in 10 seconds..."
-              sleep 10
-            else
-              echo "Failed after 3 attempts"
-              exit 1
-            fi
-          done
+          imagetools_create_rl "Docker Hub manifest" \
+            ${{ steps.tags.outputs.dockerhub_tags }} \
+            $SOURCES
 
       - name: Run Trivy vulnerability scanner
         if: github.event.inputs.run_security_scan != 'false'
@@ -1380,8 +1393,15 @@ jobs:
   # ===========================================================================
   promote-image:
     name: Promote Image
-    needs: check-releases
-    if: needs.check-releases.outputs.action_type == 'promote-image'
+    needs: [check-releases, merge-manifest]
+    if: |
+      always() &&
+      (
+        needs.check-releases.outputs.action_type == 'promote-image' ||
+        needs.check-releases.outputs.action_type == 'force-promote-latest' ||
+        (needs.check-releases.outputs.action_type == 'auto-check' && needs.check-releases.outputs.latest_version != '') ||
+        (needs.build-versions.result == 'success' || true)
+      )
     runs-on: ubuntu-latest
     concurrency:
       group: docker-build-${{ github.event.inputs.promote_tag == 'stable' && 'stable-promotion' || 'promote-image' }}
@@ -1394,7 +1414,9 @@ jobs:
     steps:
       - name: Validate inputs
         run: |
-          if [ -z "${{ github.event.inputs.promote_version }}" ]; then
+          ACTION="${{ needs.check-releases.outputs.action_type }}"
+          # For manual promote-image, require promote_version input
+          if [[ "$ACTION" == "promote-image" ]] && [ -z "${{ github.event.inputs.promote_version }}" ]; then
             echo "::error::Source version is required for image promotion"
             exit 1
           fi
@@ -1416,10 +1438,34 @@ jobs:
       - name: Promote image
         id: promote
         run: |
-          SOURCE="${{ github.event.inputs.promote_version }}"
-          TARGET="${{ github.event.inputs.promote_tag }}"
+          ACTION="${{ needs.check-releases.outputs.action_type }}"
+          FORCE_LATEST="false"
 
-          echo "Promoting version $SOURCE to $TARGET..."
+          # Determine source and target based on action type
+          if [[ "$ACTION" == "force-promote-latest" ]]; then
+            # force-promote-latest: use versions input or latest_version, always target :latest
+            SOURCE="${{ github.event.inputs.versions }}"
+            if [[ -z "$SOURCE" ]]; then
+              SOURCE="${{ needs.check-releases.outputs.latest_version }}"
+            fi
+            TARGET="latest"
+            FORCE_LATEST="true"
+          elif [[ "$ACTION" == "auto-check" ]]; then
+            # auto-check: promote latest_version to :latest
+            SOURCE="${{ needs.check-releases.outputs.latest_version }}"
+            TARGET="latest"
+          else
+            # Manual promote-image
+            SOURCE="${{ github.event.inputs.promote_version }}"
+            TARGET="${{ github.event.inputs.promote_tag }}"
+          fi
+
+          if [[ -z "$SOURCE" ]]; then
+            echo "No version to promote -- skipping"
+            exit 0
+          fi
+
+          echo "Promoting version $SOURCE to $TARGET (action=$ACTION, force=$FORCE_LATEST)..."
 
           # -- Inspect cache (avoid redundant API calls) --------
           declare -A _INSPECT_CACHE=()
@@ -1472,7 +1518,7 @@ jobs:
             TARGET_DIGEST=$(echo "$TARGET_INSPECT" | jq -r '.Digest')
           fi
 
-          if [[ "$SOURCE_DIGEST" == "$TARGET_DIGEST" && -n "$TARGET_DIGEST" ]]; then
+          if [[ "$SOURCE_DIGEST" == "$TARGET_DIGEST" && -n "$TARGET_DIGEST" && "$FORCE_LATEST" != "true" ]]; then
             echo "GHCR :${TARGET} already points to $SOURCE (digest: $SOURCE_DIGEST)"
 
             # Ensure Docker Hub is also in sync
@@ -1520,13 +1566,16 @@ jobs:
   # ===========================================================================
   mark-stable:
     name: Mark Stable
-    needs: [check-releases, merge-manifest, sync-registries]
+    needs: [check-releases, merge-manifest, sync-registries, promote-image]
     if: |
       always() &&
-      (needs.check-releases.outputs.action_type == 'mark-stable' ||
-       (needs.check-releases.outputs.action_type == 'auto-check' &&
-        needs.check-releases.outputs.should_mark_stable == 'true' &&
-        needs.merge-manifest.result != 'failure'))
+      (
+        needs.check-releases.outputs.action_type == 'promote-stable' ||
+        needs.check-releases.outputs.action_type == 'force-promote-stable' ||
+        (needs.check-releases.outputs.action_type == 'auto-check' &&
+         needs.check-releases.outputs.should_mark_stable == 'true' &&
+         needs.merge-manifest.result != 'failure')
+      )
     runs-on: ubuntu-latest
     concurrency:
       group: docker-build-stable-promotion
@@ -1555,7 +1604,11 @@ jobs:
         id: promote-stable
         run: |
           STABLE_VERSION="${{ needs.check-releases.outputs.stable_version }}"
-          FORCE_PROMOTE_STABLE="${{ github.event.inputs.force_promote_stable }}"
+          ACTION="${{ needs.check-releases.outputs.action_type }}"
+          FORCE_PROMOTE_STABLE="false"
+          if [[ "$ACTION" == "force-promote-stable" ]]; then
+            FORCE_PROMOTE_STABLE="true"
+          fi
 
           echo "promoted_version=" >> $GITHUB_OUTPUT
           echo "promoted_digest=" >> $GITHUB_OUTPUT
@@ -1854,3 +1907,79 @@ jobs:
           fi
 
           echo "Updated pipeline-state branch with version $LATEST_VERSION, latest-version-since=$LATEST_SINCE"
+
+  # ===========================================================================
+  # Job 9: Update README version after promote
+  # ===========================================================================
+  update-readme-version:
+    name: Update README version
+    needs: [check-releases, promote-image]
+    if: |
+      needs.promote-image.result == 'success' &&
+      needs.check-releases.outputs.latest_version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          token: ${{ github.token }}
+
+      - name: Update version in README
+        shell: bash
+        run: |
+          set -euo pipefail
+          LATEST="${{ needs.check-releases.outputs.latest_version }}"
+          echo "Updating README to version $LATEST"
+
+          # Update the specific version tag row in the Available Tags table
+          sed -i -E "s|<td align=\"center\">[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+</td>|<td align=\"center\">${LATEST}</td>|" README.md
+          sed -i -E "s|\"iSpy Agent DVR\" Static version [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ image|\"iSpy Agent DVR\" Static version ${LATEST} image|" README.md
+
+          if git diff --quiet README.md; then
+            echo "README already up to date"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: update README version to ${LATEST}"
+
+          for attempt in 1 2 3; do
+            if git pull --rebase origin main && git push origin main; then
+              echo "README push succeeded"
+              break
+            fi
+            git rebase --abort 2>/dev/null || true
+            if [ "$attempt" -eq 3 ]; then
+              echo "::warning::Could not push README update after retries"
+              exit 0
+            fi
+            sleep 3
+          done
+
+  # ===========================================================================
+  # Job 10: Sync README to Docker Hub description
+  # ===========================================================================
+  update-dockerhub-description:
+    name: Update Docker Hub description
+    needs: [promote-image, update-readme-version]
+    if: |
+      always() &&
+      needs.promote-image.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Sync README to Docker Hub
+        uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.DOCKERHUB_REPO }}
