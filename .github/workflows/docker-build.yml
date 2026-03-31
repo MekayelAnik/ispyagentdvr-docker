@@ -915,9 +915,9 @@ jobs:
             network=host
           buildkitd-flags: --allow-insecure-entitlement network.host
           buildkitd-config-inline: |
-            # DNS: faster resolution via Cloudflare + Google (host network bypasses Docker DNS)
+            # DNS: faster resolution via Cloudflare + Gcore (host network bypasses Docker DNS)
             [dns]
-              nameservers = ["1.1.1.1", "8.8.8.8"]
+              nameservers = ["1.1.1.1", "1.0.0.1", "95.85.95.85", "2.56.220.2"]
               options = ["ndots:0", "attempts:2", "timeout:3"]
 
             # History: disabled on ephemeral CI runners (no value in keeping build history)
