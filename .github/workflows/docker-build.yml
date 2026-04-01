@@ -888,24 +888,41 @@ jobs:
           fi
           
           # Generate combined matrix: [{version, platform, platform_slug, is_beta, runner}, ...]
+          # Runner affinity lookup table: maps each Docker platform to a runner suffix
           ACTION_RUNNER="${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-24.04' }}"
-          ARM_RUNNER="${ACTION_RUNNER}-arm"
-          RISCV_RUNNER="${ACTION_RUNNER}-riscv"
-          MATRIX=$(echo "$VERSIONS" | jq -c --argjson betas "$BETA_VERSIONS" --arg platforms "$PLATFORMS" --arg arm_runner "$ARM_RUNNER" --arg amd_runner "$ACTION_RUNNER" --arg riscv_runner "$RISCV_RUNNER" '
-            . as $versions |
-            ($platforms | gsub(" "; "") | split(",") | map(select(length > 0))) as $platform_list |
-            [
-              $versions[] as $v |
-              $platform_list[] as $p |
-              {
-                version: $v,
-                platform: $p,
-                platform_slug: ($p | gsub("/"; "-")),
-                is_beta: (if $betas[$v] == true then "true" else "false" end),
-                runner: (if $p == "linux/amd64" then $amd_runner elif $p == "linux/riscv64" then $riscv_runner else $arm_runner end)
-              }
-            ]
-          ')
+          runner_suffix_for() {
+            case "$1" in
+              linux/amd64)    echo "" ;;        # native amd64
+              linux/arm64)    echo "-arm" ;;    # native arm64
+              linux/arm/v7)   echo "-arm" ;;    # arm64 runner, native ARM32 compat
+              linux/arm/v6)   echo "-arm" ;;    # arm64 runner, native ARM32 compat
+              linux/riscv64)  echo "-riscv" ;;  # native riscv64
+              linux/386)      echo "" ;;        # amd64 runner, native i386 compat
+              linux/s390x)    echo "" ;;        # amd64 runner, QEMU
+              linux/ppc64le)  echo "" ;;        # amd64 runner, QEMU
+              linux/mips64le) echo "" ;;        # amd64 runner, QEMU
+              *)              echo "" ;;        # fallback to amd64 runner
+            esac
+          }
+
+          # Build the JSON matrix using the lookup table
+          MATRIX="["
+          FIRST=true
+          for v in $(echo "$VERSIONS" | jq -r '.[]'); do
+            IS_BETA=$(echo "$BETA_VERSIONS" | jq -r --arg v "$v" 'if .[$v] == true then "true" else "false" end')
+            IFS=',' read -ra PLAT_ARRAY <<< "$(echo "$PLATFORMS" | tr -d ' ')"
+            for p in "${PLAT_ARRAY[@]}"; do
+              [ -z "$p" ] && continue
+              SUFFIX=$(runner_suffix_for "$p")
+              RUNNER="${ACTION_RUNNER}${SUFFIX}"
+              SLUG=$(echo "$p" | tr '/' '-')
+              $FIRST || MATRIX+=","
+              FIRST=false
+              MATRIX+=$(jq -nc --arg v "$v" --arg p "$p" --arg s "$SLUG" --arg b "$IS_BETA" --arg r "$RUNNER" \
+                '{version:$v, platform:$p, platform_slug:$s, is_beta:$b, runner:$r}')
+            done
+          done
+          MATRIX+="]"
           
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
           echo "Generated build matrix with $(echo $MATRIX | jq length) entries"
@@ -961,8 +978,7 @@ jobs:
           sudo apt-get clean
           df -h
 
-      - name: Set up QEMU for cross-platform builds
-        if: matrix.platform == 'linux/arm/v7'
+      - name: Set up QEMU (binfmt) for cross-platform builds
         uses: docker/setup-qemu-action@v4
         with:
           platforms: ${{ matrix.platform }}
