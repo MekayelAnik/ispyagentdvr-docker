@@ -186,6 +186,8 @@ env:
   DEFAULT_BASE_IMAGE: ${{ vars.DEFAULT_BASE_IMAGE || 'mekayelanik/ispyagentdvr-base-image:latest' }}
   # Base image update check: set to 'true' to enable automatic rebuilds when base image changes
   UPDATE_BASE_IMAGE_ENABLED: ${{ vars.UPDATE_BASE_IMAGE_ENABLED || 'false' }}
+  # Comma-separated list of versions to exclude from builds (e.g. "7.0.5.0,7.0.6.0")
+  EXCLUDE_VERSIONS: ${{ vars.EXCLUDE_VERSIONS || '' }}
   # BuildKit concurrency and log tuning
   EXPORT_CACHE_CONCURRENCY: '4'
   EXPORT_LAYERS_CONCURRENCY: '4'
@@ -268,13 +270,13 @@ jobs:
     if: needs.quick-check.outputs.should_continue == 'true'
     runs-on: ubuntu-latest
     outputs:
-      versions_to_build: ${{ steps.determine-versions.outputs.versions }}
-      versions_json: ${{ steps.determine-versions.outputs.versions_json }}
+      versions_to_build: ${{ steps.filter-excluded.outputs.versions || steps.determine-versions.outputs.versions }}
+      versions_json: ${{ steps.filter-excluded.outputs.versions_json || steps.determine-versions.outputs.versions_json }}
       latest_version: ${{ steps.fetch-releases.outputs.latest_version }}
       latest_is_beta: ${{ steps.fetch-releases.outputs.latest_is_beta }}
       beta_versions: ${{ steps.fetch-releases.outputs.beta_versions }}
       available_versions: ${{ steps.fetch-releases.outputs.available_versions }}
-      should_build: ${{ steps.determine-versions.outputs.should_build }}
+      should_build: ${{ steps.filter-excluded.outputs.should_build || steps.determine-versions.outputs.should_build }}
       should_mark_stable: ${{ steps.check-stable.outputs.should_mark_stable }}
       stable_version: ${{ steps.check-stable.outputs.stable_version }}
       action_type: ${{ steps.set-action.outputs.action }}
@@ -824,10 +826,57 @@ jobs:
               ;;
           esac
 
+      - name: Filter excluded versions
+        id: filter-excluded
+        if: env.EXCLUDE_VERSIONS != ''
+        run: |
+          VERSIONS_CSV="${{ steps.determine-versions.outputs.versions }}"
+          SHOULD_BUILD="${{ steps.determine-versions.outputs.should_build }}"
+
+          # Nothing to filter if no versions or not building
+          if [[ -z "$VERSIONS_CSV" || "$SHOULD_BUILD" != "true" ]]; then
+            exit 0
+          fi
+
+          # Build exclusion regex from comma-separated EXCLUDE_VERSIONS
+          EXCLUDE_PATTERN="$(echo "$EXCLUDE_VERSIONS" | tr ',' '\n' | sed 's/^ *//; s/ *$//' | sed '/^$/d' | paste -sd '|')"
+
+          FILTERED=""
+          EXCLUDED_COUNT=0
+          IFS=',' read -ra ARR <<< "$VERSIONS_CSV"
+          for ver in "${ARR[@]}"; do
+            ver="$(echo "$ver" | xargs)"
+            if echo "$ver" | grep -Exq "$EXCLUDE_PATTERN"; then
+              echo "Excluding version: $ver"
+              (( EXCLUDED_COUNT++ )) || true
+            else
+              FILTERED="${FILTERED:+$FILTERED,}$ver"
+            fi
+          done
+
+          if [[ "$EXCLUDED_COUNT" -gt 0 ]]; then
+            echo "Excluded $EXCLUDED_COUNT version(s): $EXCLUDE_VERSIONS"
+          fi
+
+          if [[ -z "$FILTERED" ]]; then
+            echo "All versions excluded — nothing to build"
+            echo "versions=" >> "$GITHUB_OUTPUT"
+            echo "versions_json=[]" >> "$GITHUB_OUTPUT"
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Rebuild JSON array
+          JSON_ARRAY=$(echo "$FILTERED" | sed 's/,/","/g; s/^/["/; s/$/"]/')
+          echo "versions=$FILTERED" >> "$GITHUB_OUTPUT"
+          echo "versions_json=$JSON_ARRAY" >> "$GITHUB_OUTPUT"
+          echo "should_build=true" >> "$GITHUB_OUTPUT"
+          echo "Versions after exclusion filter: $FILTERED"
+
       - name: Generate build matrix
         id: generate-matrix
         run: |
-          VERSIONS='${{ steps.determine-versions.outputs.versions_json }}'
+          VERSIONS='${{ steps.filter-excluded.outputs.versions_json || steps.determine-versions.outputs.versions_json }}'
           BETA_VERSIONS='${{ steps.fetch-releases.outputs.beta_versions }}'
           PLATFORMS='${{ steps.set-platforms.outputs.platforms }}'
           
@@ -868,8 +917,9 @@ jobs:
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Action | ${{ steps.set-action.outputs.action }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Latest Version | ${{ steps.fetch-releases.outputs.latest_version }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Versions to Build | ${{ steps.determine-versions.outputs.versions || 'None' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Should Build | ${{ steps.determine-versions.outputs.should_build }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Versions to Build | ${{ steps.filter-excluded.outputs.versions || steps.determine-versions.outputs.versions || 'None' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Should Build | ${{ steps.filter-excluded.outputs.should_build || steps.determine-versions.outputs.should_build }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Excluded Versions | ${{ env.EXCLUDE_VERSIONS || 'None' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Missing Versions | ${{ steps.validate-versions.outputs.missing_versions || 'None' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Eligible for Stable | ${{ steps.check-stable.outputs.should_mark_stable }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Base Image Selection | ${{ steps.resolve-base-image.outputs.selection }} |" >> $GITHUB_STEP_SUMMARY
