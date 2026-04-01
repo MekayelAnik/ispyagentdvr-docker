@@ -4,10 +4,31 @@
     "config:recommended",
     ":configMigration"
   ],
+  "enabledManagers": [
+    "github-actions",
+    "custom.regex"
+  ],
   "pinDigests": false,
+  "github-actions": {
+    "fileMatch": [
+      "(^|/).github/workflows/[^/]+\\.ya?ml$",
+      "(^|/).github/actions/[^/]+/action\\.ya?ml$"
+    ]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track crane (go-containerregistry) pinned fallback versions",
+      "fileMatch": [".github/actions/setup-build-env/action\\.yml$"],
+      "matchStrings": ["CRANE_FALLBACK_VERSIONS=\\(\"(?<currentValue>v[\\d.]+)\""],
+      "depNameTemplate": "google/go-containerregistry",
+      "datasourceTemplate": "github-releases"
+    }
+  ],
   "labels": [
     "dependencies",
-    "automated"
+    "automated",
+    "github-actions"
   ],
   "assignees": [
     "mekayelanik"
@@ -17,15 +38,16 @@
   ],
   "timezone": "Asia/Dhaka",
   "schedule": [
-    "before 6am"
+    "before 6am on monday"
   ],
-  "prConcurrentLimit": 10,
-  "prHourlyLimit": 5,
   "automerge": true,
+  "platformAutomerge": false,
   "automergeType": "pr",
   "automergeStrategy": "squash",
   "rebaseWhen": "behind-base-branch",
-  "minimumReleaseAge": "7 days",
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 5,
+  "minimumReleaseAge": "0 days",
   "internalChecksFilter": "strict",
   "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
@@ -37,7 +59,7 @@
   },
   "packageRules": [
     {
-      "description": "Disable pin and digest updates - use major versions only",
+      "description": "Disable pin and digest updates globally",
       "matchUpdateTypes": [
         "pin",
         "digest"
@@ -45,101 +67,32 @@
       "enabled": false
     },
     {
-      "description": "Automerge minor and patch updates for stable packages",
+      "description": "GitHub Actions: major versions only; disable minor/patch",
+      "matchManagers": [
+        "github-actions"
+      ],
       "matchUpdateTypes": [
         "minor",
         "patch"
       ],
-      "matchCurrentVersion": "!/^0/",
+      "enabled": false
+    },
+    {
+      "description": "GitHub Actions: major updates as PRs",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "automerge": true,
       "automergeType": "pr",
-      "automergeStrategy": "squash"
-    },
-    {
-      "description": "Security-related packages - high priority",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "groupName": "security-actions",
-      "prPriority": 10,
-      "labels": [
-        "dependencies",
-        "github-actions",
-        "security",
-        "priority"
-      ],
-      "matchPackageNames": [
-        "/^aquasecurity\\//",
-        "/^securego\\//",
-        "/^github\\/codeql/"
-      ]
-    },
-    {
-      "description": "Trivy action updates immediately when available",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "matchPackageNames": [
-        "aquasecurity/trivy-action"
-      ],
-      "minimumReleaseAge": null,
-      "schedule": [
-        "at any time"
-      ],
-      "prPriority": 20,
-      "automerge": true,
-      "automergeType": "pr",
-      "automergeStrategy": "squash"
-    },
-    {
-      "description": "Core GitHub Actions (checkout, setup, upload/download)",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "groupName": "github-core-actions",
-      "prPriority": 5,
+      "automergeStrategy": "squash",
       "labels": [
         "dependencies",
         "github-actions"
       ],
-      "matchPackageNames": [
-        "/^actions\\//"
-      ]
-    },
-    {
-      "description": "Docker ecosystem actions",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "groupName": "docker-actions",
-      "prPriority": 3,
-      "labels": [
-        "dependencies",
-        "github-actions",
-        "docker"
-      ],
-      "matchPackageNames": [
-        "/^docker\\//"
-      ]
-    },
-    {
-      "description": "All other GitHub Actions",
-      "matchManagers": [
-        "github-actions"
-      ],
-      "groupName": "other-github-actions",
-      "prPriority": 1,
-      "labels": [
-        "dependencies",
-        "github-actions"
-      ],
-      "matchPackageNames": [
-        "!/^actions\\//",
-        "!/^docker\\//",
-        "!/^aquasecurity\\//",
-        "!/^securego\\//",
-        "!/^github\\/codeql/"
-      ]
+      "groupName": "github-actions-major"
     }
   ],
   "commitMessagePrefix": "ci: ",
