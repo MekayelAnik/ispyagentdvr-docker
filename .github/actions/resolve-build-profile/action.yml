@@ -1,0 +1,59 @@
+name: Resolve Build Profile
+description: Resolve compression settings from a build profile name
+
+inputs:
+  build_profile:
+    description: Build profile name (production, ci, development, size-optimized)
+    required: false
+    default: production
+
+outputs:
+  compression_type:
+    description: Compression type (zstd or gzip)
+    value: ${{ steps.resolve.outputs.compression_type }}
+  compression_level:
+    description: Compression level for selected type
+    value: ${{ steps.resolve.outputs.compression_level }}
+  compression_params:
+    description: Buildx outputs compression params
+    value: ${{ steps.resolve.outputs.compression_params }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve profile
+      id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        PROFILE="${{ inputs.build_profile }}"
+
+        case "$PROFILE" in
+          development|dev)
+            CT=gzip
+            CL=1
+            ;;
+          ci|continuous-integration)
+            CT=zstd
+            CL=3
+            ;;
+          size-optimized)
+            CT=gzip
+            CL=9
+            ;;
+          production|prod|*)
+            CT=zstd
+            CL=22
+            ;;
+        esac
+
+        if [[ "$CT" == "zstd" ]]; then
+          CP="compression=zstd,compression-level=${CL},force-compression=true"
+        else
+          CP="compression=gzip,compression-level=${CL},force-compression=true"
+        fi
+
+        echo "compression_type=$CT" >> "$GITHUB_OUTPUT"
+        echo "compression_level=$CL" >> "$GITHUB_OUTPUT"
+        echo "compression_params=$CP" >> "$GITHUB_OUTPUT"

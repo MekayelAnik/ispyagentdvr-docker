@@ -350,19 +350,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y curl jq skopeo
-          # Install crane for lightweight HEAD-only registry operations
-          CRANE_VERSION="$(curl -fsSL https://api.github.com/repos/google/go-containerregistry/releases/latest | jq -r .tag_name)"
-          ARCH="$(uname -m)"
-          case "$ARCH" in
-            x86_64)        CRANE_ARCH="x86_64" ;;
-            aarch64|arm64) CRANE_ARCH="arm64" ;;
-            *)             echo "crane: unsupported arch $ARCH, skipping"; exit 0 ;;
-          esac
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${CRANE_ARCH}.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
 
-      - name: Login to registries
-        uses: ./.github/actions/registry-login
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
         with:
+          do_checkout: 'false'
+          setup_qemu: 'false'
+          setup_buildx: 'false'
+          login_dockerhub: 'true'
+          login_ghcr: 'true'
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           ghcr_actor: ${{ github.actor }}
@@ -978,62 +974,18 @@ jobs:
           sudo apt-get clean
           df -h
 
-      - name: Set up QEMU (binfmt) for cross-platform builds
-        uses: docker/setup-qemu-action@v4
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
         with:
-          platforms: ${{ matrix.platform }}
-
-      - name: Set up Docker Buildx (ultra-optimized)
-        uses: docker/setup-buildx-action@v4
-        with:
-          driver-opts: |
-            image=moby/buildkit:master
-            network=host
-          buildkitd-flags: --allow-insecure-entitlement network.host
-          buildkitd-config-inline: |
-            # DNS: faster resolution via Cloudflare + Gcore (host network bypasses Docker DNS)
-            [dns]
-              nameservers = ["1.1.1.1", "76.76.2.0", "95.161.161.161", "8.8.8.8"]
-              options = ["ndots:0", "attempts:2", "timeout:3"]
-
-            # History: disabled on ephemeral CI runners (no value in keeping build history)
-            [history]
-              maxAge = 0
-              maxEntries = 0
-
-            [worker.oci]
-              max-parallelism = 4
-              gc = true
-              # Modern GC config (replaces deprecated gckeepstorage)
-              # GHA runners have ~14GB free — keep GC thresholds realistic
-              reservedSpace = "2GB"
-              maxUsedSpace = "12GB"
-              minFreeSpace = "2GB"
-              # Reuse CNI network namespaces across build steps (avoids alloc/release overhead)
-              cniPoolSize = 16
-              # First policy: keep source checkouts and cache mounts for 24h (CI runners are ephemeral)
-              [[worker.oci.gcpolicy]]
-                keepBytes = 4000000000
-                keepDuration = 86400
-                filters = ["type==source.local", "type==exec.cachemount", "type==source.git.checkout"]
-              # Catch-all policy: aggressive cleanup since GHA runners are ephemeral
-              [[worker.oci.gcpolicy]]
-                all = true
-                keepBytes = 8000000000
-
-            # Docker Hub mirror: avoids DH rate limits on base image pulls
-            [registry."docker.io"]
-              mirrors = ["mirror.gcr.io"]
-
-      - name: Login to registries
-        uses: ./.github/actions/registry-login
-        with:
+          do_checkout: 'false'
+          setup_qemu: 'true'
+          setup_buildx: 'true'
+          login_dockerhub: 'true'
+          login_ghcr: 'true'
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           ghcr_actor: ${{ github.actor }}
           ghcr_token: ${{ secrets.GITHUB_TOKEN }}
-          push_to_dockerhub: ${{ github.event.inputs.push_to_dockerhub || 'true' }}
-          push_to_ghcr: ${{ github.event.inputs.push_to_ghcr || 'true' }}
 
       - name: Prepare build context
         id: prepare
@@ -1223,6 +1175,7 @@ jobs:
   merge-manifest:
     name: Merge Manifest ${{ matrix.version }}
     needs: [check-releases, build-platform]
+    if: ${{ !cancelled() && needs.check-releases.result == 'success' }}
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
     permissions:
       contents: read
@@ -1234,21 +1187,17 @@ jobs:
         version: ${{ fromJson(needs.check-releases.outputs.versions_json) }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Login to registries
-        uses: ./.github/actions/registry-login
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
         with:
+          setup_qemu: 'false'
+          setup_buildx: 'true'
+          login_dockerhub: 'true'
+          login_ghcr: 'true'
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           ghcr_actor: ${{ github.actor }}
           ghcr_token: ${{ secrets.GITHUB_TOKEN }}
-          push_to_dockerhub: ${{ github.event.inputs.push_to_dockerhub || 'true' }}
-          push_to_ghcr: ${{ github.event.inputs.push_to_ghcr || 'true' }}
 
       - name: Download all digests for version
         uses: actions/download-artifact@v8
@@ -1256,6 +1205,7 @@ jobs:
           path: /tmp/digests
           pattern: digest-${{ matrix.version }}-*
           merge-multiple: true
+          if-no-files-found: warn
 
       - name: List downloaded digests
         run: |
@@ -1468,24 +1418,13 @@ jobs:
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Install skopeo and crane
-        run: |
-          sudo apt-get update && sudo apt-get install -y skopeo jq
-          CRANE_VERSION="$(curl -fsSL https://api.github.com/repos/google/go-containerregistry/releases/latest | jq -r .tag_name)"
-          ARCH="$(uname -m)"
-          case "$ARCH" in
-            x86_64)        CRANE_ARCH="x86_64" ;;
-            aarch64|arm64) CRANE_ARCH="arm64" ;;
-            *)             echo "crane: unsupported arch $ARCH, skipping"; exit 0 ;;
-          esac
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${CRANE_ARCH}.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
-
-      - name: Login to registries
-        uses: ./.github/actions/registry-login
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
         with:
+          setup_qemu: 'false'
+          setup_buildx: 'false'
+          login_dockerhub: 'true'
+          login_ghcr: 'true'
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           ghcr_actor: ${{ github.actor }}
@@ -1531,24 +1470,13 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Install skopeo and crane
-        run: |
-          sudo apt-get update && sudo apt-get install -y skopeo
-          CRANE_VERSION="$(curl -fsSL https://api.github.com/repos/google/go-containerregistry/releases/latest | jq -r .tag_name)"
-          ARCH="$(uname -m)"
-          case "$ARCH" in
-            x86_64)        CRANE_ARCH="x86_64" ;;
-            aarch64|arm64) CRANE_ARCH="arm64" ;;
-            *)             echo "crane: unsupported arch $ARCH, skipping"; exit 0 ;;
-          esac
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${CRANE_ARCH}.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
-
-      - name: Login to registries
-        uses: ./.github/actions/registry-login
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
         with:
+          setup_qemu: 'false'
+          setup_buildx: 'false'
+          login_dockerhub: 'true'
+          login_ghcr: 'true'
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           ghcr_actor: ${{ github.actor }}
@@ -1713,24 +1641,14 @@ jobs:
       promoted_at: ${{ steps.promote-stable.outputs.promoted_at }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Install skopeo and crane
-        run: |
-          sudo apt-get update && sudo apt-get install -y skopeo jq
-          CRANE_VERSION="$(curl -fsSL https://api.github.com/repos/google/go-containerregistry/releases/latest | jq -r .tag_name)"
-          ARCH="$(uname -m)"
-          case "$ARCH" in
-            x86_64)        CRANE_ARCH="x86_64" ;;
-            aarch64|arm64) CRANE_ARCH="arm64" ;;
-            *)             echo "crane: unsupported arch $ARCH, skipping"; exit 0 ;;
-          esac
-          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_${CRANE_ARCH}.tar.gz" | sudo tar xzf - -C /usr/local/bin crane
-
-      - name: Login to registries
-        uses: ./.github/actions/registry-login
+      - name: Setup build environment
+        uses: ./.github/actions/setup-build-env
         with:
+          do_checkout: 'false'
+          setup_qemu: 'false'
+          setup_buildx: 'false'
+          login_dockerhub: 'true'
+          login_ghcr: 'true'
           dockerhub_username: ${{ secrets.DOCKERHUB_USERNAME }}
           dockerhub_token: ${{ secrets.DOCKERHUB_TOKEN }}
           ghcr_actor: ${{ github.actor }}
