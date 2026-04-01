@@ -11,17 +11,15 @@
   "pinDigests": false,
   "github-actions": {
     "managerFilePatterns": [
-      "/(^|/).github/workflows/[^/]+\.ya?ml$/",
-      "/(^|/).github/actions/[^/]+/action\.ya?ml$/"
+      "/(^|/).github/workflows/[^/]+\\.ya?ml$/",
+      "/(^|/).github/actions/[^/]+/action\\.ya?ml$/"
     ]
   },
   "customManagers": [
     {
       "customType": "regex",
       "description": "Track crane (go-containerregistry) pinned fallback versions",
-      "managerFilePatterns": [
-        "/.github/actions/setup-build-env/action\.yml$/"
-      ],
+      "managerFilePatterns": ["/.github/actions/setup-build-env/action\\.yml$/"],
       "matchStrings": ["CRANE_FALLBACK_VERSIONS=\\(\"(?<currentValue>v[\\d.]+)\""],
       "depNameTemplate": "google/go-containerregistry",
       "datasourceTemplate": "github-releases"
