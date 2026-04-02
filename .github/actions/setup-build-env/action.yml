@@ -48,7 +48,7 @@ runs:
   steps:
     - name: Checkout
       if: inputs.do_checkout == 'true'
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Set up QEMU (all non-native — amd64 is native on GHA runners)
       if: inputs.setup_qemu == 'true'
