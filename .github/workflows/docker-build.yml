@@ -706,19 +706,25 @@ jobs:
           # Check a single version against both registries using digest comparison (background job)
           # A version is "exists" only if both registries have the tag AND digests match.
           # If digests differ, it's flagged as missing so sync/rebuild can fix it.
+          # SHA-256 of empty input — used to detect failed skopeo fallback
+          EMPTY_SHA="sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+          get_digest() {
+            local ref=$1 digest=""
+            digest=$(crane digest "$ref" 2>/dev/null) && [[ -n "$digest" ]] && echo "$digest" && return 0
+            local raw; raw=$(skopeo inspect --raw "docker://$ref" 2>/dev/null)
+            [[ -n "$raw" ]] || return 1
+            digest=$(echo "$raw" | sha256sum | awk '{print "sha256:"$1}')
+            [[ "$digest" != "$EMPTY_SHA" ]] && echo "$digest" && return 0
+            return 1
+          }
+
           check_version_exists() {
             local version=$1 check_tag=$2 result_dir=$3
             local dh_digest="" ghcr_digest=""
 
-            # Get digest from Docker Hub (crane HEAD is cheapest)
-            dh_digest=$(crane digest "${{ env.DOCKERHUB_REPO }}:${check_tag}" 2>/dev/null) || \
-              dh_digest=$(skopeo inspect --raw "docker://${{ env.DOCKERHUB_REPO }}:${check_tag}" 2>/dev/null | sha256sum | awk '{print "sha256:"$1}') || \
-              dh_digest=""
-
-            # Get digest from GHCR
-            ghcr_digest=$(crane digest "${{ env.GHCR_REPO }}:${check_tag}" 2>/dev/null) || \
-              ghcr_digest=$(skopeo inspect --raw "docker://${{ env.GHCR_REPO }}:${check_tag}" 2>/dev/null | sha256sum | awk '{print "sha256:"$1}') || \
-              ghcr_digest=""
+            dh_digest=$(get_digest "${{ env.DOCKERHUB_REPO }}:${check_tag}") || dh_digest=""
+            ghcr_digest=$(get_digest "${{ env.GHCR_REPO }}:${check_tag}") || ghcr_digest=""
 
             if [[ -n "$dh_digest" && -n "$ghcr_digest" && "$dh_digest" == "$ghcr_digest" ]]; then
               echo "exists" > "${result_dir}/${version}"
@@ -779,9 +785,26 @@ jobs:
 
           case "$ACTION" in
             "auto-check")
-              # Scan all available versions (up to 20) for missing builds, oldest first
+              # Scan all available versions for missing builds, oldest first
               ALL_VERSIONS=$(tac /tmp/available_versions.txt | paste -sd ',' -)
-              echo "Scanning all available versions for missing builds: $ALL_VERSIONS"
+
+              # Pre-filter excluded versions before registry scan to avoid wasted checks
+              EXCLUDE_LIST="${{ env.EXCLUDE_VERSIONS }}"
+              if [[ -n "$EXCLUDE_LIST" ]]; then
+                FILTERED_ALL=""
+                IFS=',' read -ra ALL_ARR <<< "$ALL_VERSIONS"
+                for v in "${ALL_ARR[@]}"; do
+                  v=$(echo "$v" | xargs)
+                  if echo ",$EXCLUDE_LIST," | grep -q ",$v,"; then
+                    echo "Pre-excluding version $v (in EXCLUDE_VERSIONS)"
+                  else
+                    FILTERED_ALL="${FILTERED_ALL:+$FILTERED_ALL,}$v"
+                  fi
+                done
+                ALL_VERSIONS="$FILTERED_ALL"
+              fi
+
+              echo "Scanning versions for missing builds: $ALL_VERSIONS"
 
               # Use filter_existing_versions to find which ones are missing
               # Temporarily force skip_existing behavior for auto-check
