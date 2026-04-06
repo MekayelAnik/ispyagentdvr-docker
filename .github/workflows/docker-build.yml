@@ -1072,7 +1072,7 @@ jobs:
       fail-fast: false
       max-parallel: 6
       matrix:
-        include: ${{ fromJson(needs.check-releases.outputs.build_matrix) }}
+        include: ${{ fromJson(needs.check-releases.outputs.build_matrix || '[{"skip":"true","version":"none","platform":"none","platform_slug":"skip","is_beta":"false","runner":"ubuntu-24.04"}]') }}
 
     steps:
       - name: Checkout repository
