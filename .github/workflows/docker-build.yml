@@ -536,17 +536,12 @@ jobs:
       - name: Check existing images in registries
         id: check-existing
         run: |
-          source "${{ github.workspace }}/.github/scripts/lib-retry.sh"
-
           check_image_exists() {
             local registry=$1
             local tag=$2
-            # Fast path: single crane HEAD request; retry + skopeo fallback only on failure
-            if crane digest "${registry}:${tag}" >/dev/null 2>&1; then
-              echo "exists"
-            elif run_with_retry crane digest "${registry}:${tag}" >/dev/null 2>&1; then
-              echo "exists"
-            elif run_with_retry skopeo inspect "docker://${registry}:${tag}" > /dev/null 2>&1; then
+            # Single crane HEAD + skopeo fallback — 404 is definitive, no retries needed
+            if crane digest "${registry}:${tag}" >/dev/null 2>&1 || \
+               skopeo inspect --raw "docker://${registry}:${tag}" > /dev/null 2>&1; then
               echo "exists"
             else
               echo "missing"
@@ -713,8 +708,6 @@ jobs:
       - name: Determine versions to build
         id: determine-versions
         run: |
-          source "${{ github.workspace }}/.github/scripts/lib-retry.sh"
-
           ACTION="${{ steps.set-action.outputs.action }}"
           FORCE_BUILD="${{ github.event.inputs.force_build }}"
           SKIP_EXISTING="${{ github.event.inputs.skip_existing }}"
@@ -722,24 +715,20 @@ jobs:
           BETA_VERSIONS='${{ steps.fetch-releases.outputs.beta_versions }}'
 
           # Check a single version against both registries (used as background job)
+          # Uses single attempts only — a 404 is definitive, retries are wasteful here.
+          # If a version is wrongly flagged as missing, the build will simply be a no-op rebuild.
           check_version_exists() {
             local version=$1 check_tag=$2 result_dir=$3
             local dh_ok=false ghcr_ok=false
 
-            # Fast path: crane digest (single HEAD request)
-            if crane digest "${{ env.DOCKERHUB_REPO }}:${check_tag}" >/dev/null 2>&1; then
-              dh_ok=true
-            elif run_with_retry crane digest "${{ env.DOCKERHUB_REPO }}:${check_tag}" >/dev/null 2>&1; then
-              dh_ok=true
-            elif run_with_retry skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${check_tag}" >/dev/null 2>&1; then
+            # Single crane HEAD request per registry, skopeo fallback once
+            if crane digest "${{ env.DOCKERHUB_REPO }}:${check_tag}" >/dev/null 2>&1 || \
+               skopeo inspect --raw "docker://${{ env.DOCKERHUB_REPO }}:${check_tag}" >/dev/null 2>&1; then
               dh_ok=true
             fi
 
-            if crane digest "${{ env.GHCR_REPO }}:${check_tag}" >/dev/null 2>&1; then
-              ghcr_ok=true
-            elif run_with_retry crane digest "${{ env.GHCR_REPO }}:${check_tag}" >/dev/null 2>&1; then
-              ghcr_ok=true
-            elif run_with_retry skopeo inspect "docker://${{ env.GHCR_REPO }}:${check_tag}" >/dev/null 2>&1; then
+            if crane digest "${{ env.GHCR_REPO }}:${check_tag}" >/dev/null 2>&1 || \
+               skopeo inspect --raw "docker://${{ env.GHCR_REPO }}:${check_tag}" >/dev/null 2>&1; then
               ghcr_ok=true
             fi
 
