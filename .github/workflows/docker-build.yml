@@ -1187,9 +1187,13 @@ jobs:
         version: ${{ fromJson(needs.check-releases.outputs.versions_json) }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Setup build environment
         uses: ./.github/actions/setup-build-env
         with:
+          do_checkout: 'false'
           setup_qemu: 'false'
           setup_buildx: 'true'
           login_dockerhub: 'true'
@@ -1417,9 +1421,13 @@ jobs:
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Setup build environment
         uses: ./.github/actions/setup-build-env
         with:
+          do_checkout: 'false'
           setup_qemu: 'false'
           setup_buildx: 'false'
           login_dockerhub: 'true'
@@ -1448,7 +1456,7 @@ jobs:
       (
         needs.check-releases.outputs.action_type == 'promote-image' ||
         needs.check-releases.outputs.action_type == 'force-promote-latest' ||
-        (needs.check-releases.outputs.action_type == 'auto-check' && needs.check-releases.outputs.latest_version != '')
+        (needs.check-releases.outputs.action_type == 'auto-check' && needs.check-releases.outputs.latest_version != '' && needs.merge-manifest.result == 'success')
       )
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
     concurrency:
@@ -1469,9 +1477,13 @@ jobs:
             exit 1
           fi
 
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Setup build environment
         uses: ./.github/actions/setup-build-env
         with:
+          do_checkout: 'false'
           setup_qemu: 'false'
           setup_buildx: 'false'
           login_dockerhub: 'true'
@@ -1640,6 +1652,9 @@ jobs:
       promoted_at: ${{ steps.promote-stable.outputs.promoted_at }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Setup build environment
         uses: ./.github/actions/setup-build-env
         with:
@@ -1910,8 +1925,7 @@ jobs:
     if: |
       always() &&
       needs.check-releases.result == 'success' &&
-      (needs.check-releases.outputs.action_type == 'auto-check' ||
-       needs.merge-manifest.result == 'success')
+      needs.merge-manifest.result == 'success'
     permissions:
       contents: write
 
