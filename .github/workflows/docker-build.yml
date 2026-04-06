@@ -541,8 +541,10 @@ jobs:
           check_image_exists() {
             local registry=$1
             local tag=$2
-            # crane digest with retry (HEAD-only), falls back to skopeo with retry
-            if run_with_retry crane digest "${registry}:${tag}" >/dev/null 2>&1; then
+            # Fast path: single crane HEAD request; retry + skopeo fallback only on failure
+            if crane digest "${registry}:${tag}" >/dev/null 2>&1; then
+              echo "exists"
+            elif run_with_retry crane digest "${registry}:${tag}" >/dev/null 2>&1; then
               echo "exists"
             elif run_with_retry skopeo inspect "docker://${registry}:${tag}" > /dev/null 2>&1; then
               echo "exists"
@@ -719,40 +721,74 @@ jobs:
           LATEST_VERSION="${{ steps.fetch-releases.outputs.latest_version }}"
           BETA_VERSIONS='${{ steps.fetch-releases.outputs.beta_versions }}'
 
+          # Check a single version against both registries (used as background job)
+          check_version_exists() {
+            local version=$1 check_tag=$2 result_dir=$3
+            local dh_ok=false ghcr_ok=false
+
+            # Fast path: crane digest (single HEAD request)
+            if crane digest "${{ env.DOCKERHUB_REPO }}:${check_tag}" >/dev/null 2>&1; then
+              dh_ok=true
+            elif run_with_retry crane digest "${{ env.DOCKERHUB_REPO }}:${check_tag}" >/dev/null 2>&1; then
+              dh_ok=true
+            elif run_with_retry skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${check_tag}" >/dev/null 2>&1; then
+              dh_ok=true
+            fi
+
+            if crane digest "${{ env.GHCR_REPO }}:${check_tag}" >/dev/null 2>&1; then
+              ghcr_ok=true
+            elif run_with_retry crane digest "${{ env.GHCR_REPO }}:${check_tag}" >/dev/null 2>&1; then
+              ghcr_ok=true
+            elif run_with_retry skopeo inspect "docker://${{ env.GHCR_REPO }}:${check_tag}" >/dev/null 2>&1; then
+              ghcr_ok=true
+            fi
+
+            if [[ "$dh_ok" == "true" && "$ghcr_ok" == "true" ]]; then
+              echo "exists" > "${result_dir}/${version}"
+              echo "Skipping version $version (tag: $check_tag) - already exists in both registries" >&2
+            else
+              echo "missing" > "${result_dir}/${version}"
+            fi
+          }
+
           filter_existing_versions() {
             local versions=$1
             local filtered=""
+            local result_dir
+            result_dir="$(mktemp -d)"
 
+            if [ "$SKIP_EXISTING" != "true" ] || [ "$FORCE_BUILD" == "true" ]; then
+              echo "$versions"
+              return 0
+            fi
+
+            # Launch all version checks in parallel
             IFS=',' read -ra VERSION_ARRAY <<< "$versions"
             for version in "${VERSION_ARRAY[@]}"; do
               version=$(echo "$version" | xargs)
-
-              if [ "$SKIP_EXISTING" == "true" ] && [ "$FORCE_BUILD" != "true" ]; then
-                # Check if this version is beta to determine the actual tag
-                IS_BETA=$(echo "$BETA_VERSIONS" | jq -r --arg v "$version" '.[$v] // false')
-                if [ "$IS_BETA" == "true" ]; then
-                  CHECK_TAG="${version}-beta"
-                else
-                  CHECK_TAG="${version}"
-                fi
-
-                # Check if version exists in both registries (crane digest with retry, falls back to skopeo with retry)
-                DH_EXISTS=$( (run_with_retry crane digest "${{ env.DOCKERHUB_REPO }}:${CHECK_TAG}" >/dev/null 2>&1 || run_with_retry skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${CHECK_TAG}" >/dev/null 2>&1) && echo "yes" || echo "no")
-                GHCR_EXISTS=$( (run_with_retry crane digest "${{ env.GHCR_REPO }}:${CHECK_TAG}" >/dev/null 2>&1 || run_with_retry skopeo inspect "docker://${{ env.GHCR_REPO }}:${CHECK_TAG}" >/dev/null 2>&1) && echo "yes" || echo "no")
-
-                if [ "$DH_EXISTS" == "yes" ] && [ "$GHCR_EXISTS" == "yes" ]; then
-                  echo "Skipping version $version (tag: $CHECK_TAG) - already exists in both registries" >&2
-                  continue
-                fi
-              fi
-
-              if [ -z "$filtered" ]; then
-                filtered="$version"
+              IS_BETA=$(echo "$BETA_VERSIONS" | jq -r --arg v "$version" '.[$v] // false')
+              if [ "$IS_BETA" == "true" ]; then
+                CHECK_TAG="${version}-beta"
               else
-                filtered="$filtered,$version"
+                CHECK_TAG="${version}"
+              fi
+              check_version_exists "$version" "$CHECK_TAG" "$result_dir" &
+            done
+            wait
+
+            # Collect results in original order
+            for version in "${VERSION_ARRAY[@]}"; do
+              version=$(echo "$version" | xargs)
+              if [[ -f "${result_dir}/${version}" && "$(cat "${result_dir}/${version}")" == "missing" ]]; then
+                if [ -z "$filtered" ]; then
+                  filtered="$version"
+                else
+                  filtered="$filtered,$version"
+                fi
               fi
             done
 
+            rm -rf "$result_dir"
             echo "$filtered"
           }
 
