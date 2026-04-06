@@ -278,6 +278,8 @@ jobs:
       platforms: ${{ steps.set-platforms.outputs.platforms }}
       compression_level: ${{ steps.set-compression.outputs.level }}
       build_matrix: ${{ steps.generate-matrix.outputs.matrix }}
+      latest_needs_promote: ${{ steps.determine-versions.outputs.latest_needs_promote }}
+      stable_needs_sync: ${{ steps.determine-versions.outputs.stable_needs_sync }}
 
     steps:
       - name: Checkout repository
@@ -774,6 +776,48 @@ jobs:
                     MISSING_VERSIONS="$LATEST_VERSION,$MISSING_VERSIONS"
                   fi
                 fi
+              fi
+
+              # Check :latest tag digest sync across registries
+              LATEST_IS_BETA="${{ steps.fetch-releases.outputs.latest_is_beta }}"
+              if [ "$LATEST_IS_BETA" == "true" ]; then
+                LATEST_TAG="beta"
+              else
+                LATEST_TAG="latest"
+              fi
+              DH_LATEST=$(crane digest "${{ env.DOCKERHUB_REPO }}:${LATEST_TAG}" 2>/dev/null || echo "")
+              GHCR_LATEST=$(crane digest "${{ env.GHCR_REPO }}:${LATEST_TAG}" 2>/dev/null || echo "")
+              # Also get the digest of the actual latest version tag
+              if [ "$LATEST_IS_BETA" == "true" ]; then
+                LATEST_VER_TAG="${LATEST_VERSION}-beta"
+              else
+                LATEST_VER_TAG="${LATEST_VERSION}"
+              fi
+              GHCR_LATEST_VER=$(crane digest "${{ env.GHCR_REPO }}:${LATEST_VER_TAG}" 2>/dev/null || echo "")
+
+              if [[ -n "$GHCR_LATEST_VER" && "$GHCR_LATEST" != "$GHCR_LATEST_VER" ]]; then
+                echo "latest_needs_promote=true" >> $GITHUB_OUTPUT
+                echo ":${LATEST_TAG} tag needs promotion (points to $GHCR_LATEST, should be $GHCR_LATEST_VER)"
+              elif [[ -n "$DH_LATEST" && -n "$GHCR_LATEST" && "$DH_LATEST" != "$GHCR_LATEST" ]]; then
+                echo "latest_needs_promote=true" >> $GITHUB_OUTPUT
+                echo ":${LATEST_TAG} tag out of sync (DH: $DH_LATEST, GHCR: $GHCR_LATEST)"
+              else
+                echo "latest_needs_promote=false" >> $GITHUB_OUTPUT
+                echo ":${LATEST_TAG} tag is in sync"
+              fi
+
+              # Check :stable tag digest sync across registries
+              DH_STABLE=$(crane digest "${{ env.DOCKERHUB_REPO }}:stable" 2>/dev/null || echo "")
+              GHCR_STABLE=$(crane digest "${{ env.GHCR_REPO }}:stable" 2>/dev/null || echo "")
+              if [[ -n "$DH_STABLE" && -n "$GHCR_STABLE" && "$DH_STABLE" != "$GHCR_STABLE" ]]; then
+                echo "stable_needs_sync=true" >> $GITHUB_OUTPUT
+                echo ":stable tag out of sync (DH: $DH_STABLE, GHCR: $GHCR_STABLE)"
+              elif [[ -z "$DH_STABLE" && -n "$GHCR_STABLE" ]] || [[ -n "$DH_STABLE" && -z "$GHCR_STABLE" ]]; then
+                echo "stable_needs_sync=true" >> $GITHUB_OUTPUT
+                echo ":stable tag missing from one registry"
+              else
+                echo "stable_needs_sync=false" >> $GITHUB_OUTPUT
+                echo ":stable tag is in sync"
               fi
 
               if [ -n "$MISSING_VERSIONS" ] || [ "$FORCE_BUILD" == "true" ]; then
@@ -1462,7 +1506,8 @@ jobs:
       (
         needs.check-releases.outputs.action_type == 'promote-image' ||
         needs.check-releases.outputs.action_type == 'force-promote-latest' ||
-        (needs.check-releases.outputs.action_type == 'auto-check' && needs.check-releases.outputs.latest_version != '' && needs.merge-manifest.result != 'failure')
+        (needs.check-releases.outputs.action_type == 'auto-check' && needs.merge-manifest.result != 'failure' &&
+         (needs.check-releases.outputs.latest_version != '' || needs.check-releases.outputs.latest_needs_promote == 'true'))
       )
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
     concurrency:
