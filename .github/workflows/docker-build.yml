@@ -735,7 +735,7 @@ jobs:
                 GHCR_EXISTS=$( (crane digest "${{ env.GHCR_REPO }}:${CHECK_TAG}" >/dev/null 2>&1 || skopeo inspect "docker://${{ env.GHCR_REPO }}:${CHECK_TAG}" >/dev/null 2>&1) && echo "yes" || echo "no")
 
                 if [ "$DH_EXISTS" == "yes" ] && [ "$GHCR_EXISTS" == "yes" ]; then
-                  echo "::notice::Skipping version $version (tag: $CHECK_TAG) - already exists in both registries"
+                  echo "Skipping version $version (tag: $CHECK_TAG) - already exists in both registries" >&2
                   continue
                 fi
               fi
