@@ -987,9 +987,9 @@ jobs:
           BETA_VERSIONS='${{ steps.fetch-releases.outputs.beta_versions }}'
           PLATFORMS='${{ steps.set-platforms.outputs.platforms }}'
           
-          # If no versions to build, output empty string (not [] which causes GitHub Actions empty matrix failure)
+          # If no versions to build, output empty matrix
           if [ "$VERSIONS" == "[]" ] || [ -z "$VERSIONS" ]; then
-            echo "matrix=" >> $GITHUB_OUTPUT
+            echo "matrix=[]" >> $GITHUB_OUTPUT
             echo "No versions to build, empty matrix"
             exit 0
           fi
@@ -1286,7 +1286,7 @@ jobs:
   merge-manifest:
     name: Merge Manifest ${{ matrix.version }}
     needs: [check-releases, build-platform]
-    if: ${{ !cancelled() && needs.check-releases.result == 'success' }}
+    if: ${{ !cancelled() && needs.check-releases.result == 'success' && needs.check-releases.outputs.should_build == 'true' }}
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
     permissions:
       contents: read
@@ -1295,7 +1295,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ${{ fromJson(needs.check-releases.outputs.versions_json) }}
+        version: ${{ fromJson(needs.check-releases.outputs.versions_json || '["_skip_"]') }}
 
     steps:
       - name: Checkout
