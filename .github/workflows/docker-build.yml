@@ -279,7 +279,7 @@ jobs:
       compression_level: ${{ steps.set-compression.outputs.level }}
       build_matrix: ${{ steps.generate-matrix.outputs.matrix }}
       latest_needs_promote: ${{ steps.determine-versions.outputs.latest_needs_promote }}
-      stable_needs_sync: ${{ steps.determine-versions.outputs.stable_needs_sync }}
+      stable_needs_promote: ${{ steps.determine-versions.outputs.stable_needs_promote }}
 
     steps:
       - name: Checkout repository
@@ -778,46 +778,60 @@ jobs:
                 fi
               fi
 
-              # Check :latest tag digest sync across registries
+              # --- Digest check: :latest tag should match latest version tag ---
               LATEST_IS_BETA="${{ steps.fetch-releases.outputs.latest_is_beta }}"
               if [ "$LATEST_IS_BETA" == "true" ]; then
-                LATEST_TAG="beta"
-              else
-                LATEST_TAG="latest"
-              fi
-              DH_LATEST=$(crane digest "${{ env.DOCKERHUB_REPO }}:${LATEST_TAG}" 2>/dev/null || echo "")
-              GHCR_LATEST=$(crane digest "${{ env.GHCR_REPO }}:${LATEST_TAG}" 2>/dev/null || echo "")
-              # Also get the digest of the actual latest version tag
-              if [ "$LATEST_IS_BETA" == "true" ]; then
+                ROLLING_TAG="beta"
                 LATEST_VER_TAG="${LATEST_VERSION}-beta"
               else
+                ROLLING_TAG="latest"
                 LATEST_VER_TAG="${LATEST_VERSION}"
               fi
-              GHCR_LATEST_VER=$(crane digest "${{ env.GHCR_REPO }}:${LATEST_VER_TAG}" 2>/dev/null || echo "")
 
-              if [[ -n "$GHCR_LATEST_VER" && "$GHCR_LATEST" != "$GHCR_LATEST_VER" ]]; then
+              GHCR_ROLLING=$(crane digest "${{ env.GHCR_REPO }}:${ROLLING_TAG}" 2>/dev/null || echo "")
+              GHCR_LATEST_VER=$(crane digest "${{ env.GHCR_REPO }}:${LATEST_VER_TAG}" 2>/dev/null || echo "")
+              DH_ROLLING=$(crane digest "${{ env.DOCKERHUB_REPO }}:${ROLLING_TAG}" 2>/dev/null || echo "")
+
+              if [[ -z "$GHCR_LATEST_VER" ]]; then
+                # Latest version not in GHCR yet — promote after build
                 echo "latest_needs_promote=true" >> $GITHUB_OUTPUT
-                echo ":${LATEST_TAG} tag needs promotion (points to $GHCR_LATEST, should be $GHCR_LATEST_VER)"
-              elif [[ -n "$DH_LATEST" && -n "$GHCR_LATEST" && "$DH_LATEST" != "$GHCR_LATEST" ]]; then
+                echo ":${ROLLING_TAG} -- latest version ${LATEST_VER_TAG} not yet in GHCR"
+              elif [[ "$GHCR_ROLLING" != "$GHCR_LATEST_VER" ]]; then
                 echo "latest_needs_promote=true" >> $GITHUB_OUTPUT
-                echo ":${LATEST_TAG} tag out of sync (DH: $DH_LATEST, GHCR: $GHCR_LATEST)"
+                echo ":${ROLLING_TAG} digest ($GHCR_ROLLING) != ${LATEST_VER_TAG} digest ($GHCR_LATEST_VER) -- needs promotion"
+              elif [[ "$DH_ROLLING" != "$GHCR_ROLLING" ]]; then
+                echo "latest_needs_promote=true" >> $GITHUB_OUTPUT
+                echo ":${ROLLING_TAG} DH/GHCR out of sync (DH: $DH_ROLLING, GHCR: $GHCR_ROLLING)"
               else
                 echo "latest_needs_promote=false" >> $GITHUB_OUTPUT
-                echo ":${LATEST_TAG} tag is in sync"
+                echo ":${ROLLING_TAG} tag matches ${LATEST_VER_TAG} and is in sync across registries"
               fi
 
-              # Check :stable tag digest sync across registries
-              DH_STABLE=$(crane digest "${{ env.DOCKERHUB_REPO }}:stable" 2>/dev/null || echo "")
-              GHCR_STABLE=$(crane digest "${{ env.GHCR_REPO }}:stable" 2>/dev/null || echo "")
-              if [[ -n "$DH_STABLE" && -n "$GHCR_STABLE" && "$DH_STABLE" != "$GHCR_STABLE" ]]; then
-                echo "stable_needs_sync=true" >> $GITHUB_OUTPUT
-                echo ":stable tag out of sync (DH: $DH_STABLE, GHCR: $GHCR_STABLE)"
-              elif [[ -z "$DH_STABLE" && -n "$GHCR_STABLE" ]] || [[ -n "$DH_STABLE" && -z "$GHCR_STABLE" ]]; then
-                echo "stable_needs_sync=true" >> $GITHUB_OUTPUT
-                echo ":stable tag missing from one registry"
+              # --- Digest check: :stable tag should match stable version (only if criteria met) ---
+              SHOULD_MARK_STABLE="${{ steps.check-stable.outputs.should_mark_stable }}"
+              STABLE_VERSION="${{ steps.check-stable.outputs.stable_version }}"
+
+              if [[ "$SHOULD_MARK_STABLE" == "true" && -n "$STABLE_VERSION" ]]; then
+                GHCR_STABLE=$(crane digest "${{ env.GHCR_REPO }}:stable" 2>/dev/null || echo "")
+                GHCR_STABLE_VER=$(crane digest "${{ env.GHCR_REPO }}:${STABLE_VERSION}" 2>/dev/null || echo "")
+                DH_STABLE=$(crane digest "${{ env.DOCKERHUB_REPO }}:stable" 2>/dev/null || echo "")
+
+                if [[ -z "$GHCR_STABLE_VER" ]]; then
+                  echo "stable_needs_promote=true" >> $GITHUB_OUTPUT
+                  echo ":stable -- version ${STABLE_VERSION} not yet in GHCR"
+                elif [[ "$GHCR_STABLE" != "$GHCR_STABLE_VER" ]]; then
+                  echo "stable_needs_promote=true" >> $GITHUB_OUTPUT
+                  echo ":stable digest ($GHCR_STABLE) != ${STABLE_VERSION} digest ($GHCR_STABLE_VER) -- needs promotion"
+                elif [[ "$DH_STABLE" != "$GHCR_STABLE" ]]; then
+                  echo "stable_needs_promote=true" >> $GITHUB_OUTPUT
+                  echo ":stable DH/GHCR out of sync (DH: $DH_STABLE, GHCR: $GHCR_STABLE)"
+                else
+                  echo "stable_needs_promote=false" >> $GITHUB_OUTPUT
+                  echo ":stable tag matches ${STABLE_VERSION} and is in sync -- already promoted"
+                fi
               else
-                echo "stable_needs_sync=false" >> $GITHUB_OUTPUT
-                echo ":stable tag is in sync"
+                echo "stable_needs_promote=false" >> $GITHUB_OUTPUT
+                echo ":stable -- promotion criteria not met (should_mark_stable=$SHOULD_MARK_STABLE), skipping check"
               fi
 
               if [ -n "$MISSING_VERSIONS" ] || [ "$FORCE_BUILD" == "true" ]; then
