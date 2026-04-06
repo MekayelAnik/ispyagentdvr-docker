@@ -533,43 +533,6 @@ jobs:
 
           echo "Valid versions to process: $VALID_VERSIONS"
 
-      - name: Check existing images in registries
-        id: check-existing
-        run: |
-          check_image_exists() {
-            local registry=$1
-            local tag=$2
-            # Single crane HEAD + skopeo fallback — 404 is definitive, no retries needed
-            if crane digest "${registry}:${tag}" >/dev/null 2>&1 || \
-               skopeo inspect --raw "docker://${registry}:${tag}" > /dev/null 2>&1; then
-              echo "exists"
-            else
-              echo "missing"
-            fi
-          }
-
-          LATEST_VERSION="${{ steps.fetch-releases.outputs.latest_version }}"
-          LATEST_IS_BETA="${{ steps.fetch-releases.outputs.latest_is_beta }}"
-
-          # Determine the actual tag to check (beta has -beta suffix)
-          if [ "$LATEST_IS_BETA" == "true" ]; then
-            CHECK_TAG="${LATEST_VERSION}-beta"
-          else
-            CHECK_TAG="${LATEST_VERSION}"
-          fi
-
-          echo "Checking for tag: $CHECK_TAG (beta: $LATEST_IS_BETA)"
-
-          # Check Docker Hub
-          DOCKERHUB_STATUS=$(check_image_exists "${{ env.DOCKERHUB_REPO }}" "$CHECK_TAG")
-          echo "dockerhub_latest_status=$DOCKERHUB_STATUS" >> $GITHUB_OUTPUT
-
-          # Check GHCR
-          GHCR_STATUS=$(check_image_exists "${{ env.GHCR_REPO }}" "$CHECK_TAG")
-          echo "ghcr_latest_status=$GHCR_STATUS" >> $GITHUB_OUTPUT
-
-          echo "Latest version ($LATEST_VERSION, tag: $CHECK_TAG) - Docker Hub: $DOCKERHUB_STATUS, GHCR: $GHCR_STATUS"
-
       - name: Check base image for updates
         id: check-base-image
         env:
@@ -714,29 +677,31 @@ jobs:
           LATEST_VERSION="${{ steps.fetch-releases.outputs.latest_version }}"
           BETA_VERSIONS='${{ steps.fetch-releases.outputs.beta_versions }}'
 
-          # Check a single version against both registries (used as background job)
-          # Uses single attempts only — a 404 is definitive, retries are wasteful here.
-          # If a version is wrongly flagged as missing, the build will simply be a no-op rebuild.
+          # Check a single version against both registries using digest comparison (background job)
+          # A version is "exists" only if both registries have the tag AND digests match.
+          # If digests differ, it's flagged as missing so sync/rebuild can fix it.
           check_version_exists() {
             local version=$1 check_tag=$2 result_dir=$3
-            local dh_ok=false ghcr_ok=false
+            local dh_digest="" ghcr_digest=""
 
-            # Single crane HEAD request per registry, skopeo fallback once
-            if crane digest "${{ env.DOCKERHUB_REPO }}:${check_tag}" >/dev/null 2>&1 || \
-               skopeo inspect --raw "docker://${{ env.DOCKERHUB_REPO }}:${check_tag}" >/dev/null 2>&1; then
-              dh_ok=true
-            fi
+            # Get digest from Docker Hub (crane HEAD is cheapest)
+            dh_digest=$(crane digest "${{ env.DOCKERHUB_REPO }}:${check_tag}" 2>/dev/null) || \
+              dh_digest=$(skopeo inspect --raw "docker://${{ env.DOCKERHUB_REPO }}:${check_tag}" 2>/dev/null | sha256sum | awk '{print "sha256:"$1}') || \
+              dh_digest=""
 
-            if crane digest "${{ env.GHCR_REPO }}:${check_tag}" >/dev/null 2>&1 || \
-               skopeo inspect --raw "docker://${{ env.GHCR_REPO }}:${check_tag}" >/dev/null 2>&1; then
-              ghcr_ok=true
-            fi
+            # Get digest from GHCR
+            ghcr_digest=$(crane digest "${{ env.GHCR_REPO }}:${check_tag}" 2>/dev/null) || \
+              ghcr_digest=$(skopeo inspect --raw "docker://${{ env.GHCR_REPO }}:${check_tag}" 2>/dev/null | sha256sum | awk '{print "sha256:"$1}') || \
+              ghcr_digest=""
 
-            if [[ "$dh_ok" == "true" && "$ghcr_ok" == "true" ]]; then
+            if [[ -n "$dh_digest" && -n "$ghcr_digest" && "$dh_digest" == "$ghcr_digest" ]]; then
               echo "exists" > "${result_dir}/${version}"
-              echo "Skipping version $version (tag: $check_tag) - already exists in both registries" >&2
+              echo "Skipping version $version (tag: $check_tag) - digest match in both registries ($dh_digest)" >&2
             else
               echo "missing" > "${result_dir}/${version}"
+              if [[ -n "$dh_digest" && -n "$ghcr_digest" ]]; then
+                echo "Version $version (tag: $check_tag) - digest MISMATCH (DH: $dh_digest, GHCR: $ghcr_digest)" >&2
+              fi
             fi
           }
 
