@@ -754,13 +754,14 @@ jobs:
           filter_existing_versions() {
             local versions=$1
             local filtered=""
-            local result_dir
-            result_dir="$(mktemp -d)"
 
             if [ "$SKIP_EXISTING" != "true" ] || [ "$FORCE_BUILD" == "true" ]; then
               echo "$versions"
               return 0
             fi
+
+            local result_dir
+            result_dir="$(mktemp -d)"
 
             # Launch all version checks in parallel
             IFS=',' read -ra VERSION_ARRAY <<< "$versions"
