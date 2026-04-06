@@ -660,7 +660,7 @@ jobs:
           # Parse STABLE_PROMOTION_AGE (e.g. "5d", "7d", "30d", "12h"; empty = disabled)
           PROMO_AGE="${{ env.STABLE_PROMOTION_AGE }}"
           if [[ -z "$PROMO_AGE" ]]; then
-            echo "STABLE_PROMOTION_AGE is empty -- stable promotion disabled"
+            echo "::warning::STABLE_PROMOTION_AGE is empty -- stable promotion is disabled. Set it to a value like '5d', '12h', or '30m' to enable."
             echo "should_mark_stable=false" >> $GITHUB_OUTPUT
             echo "stable_version=" >> $GITHUB_OUTPUT
             exit 0
@@ -1826,7 +1826,7 @@ jobs:
             # Parse STABLE_PROMOTION_AGE (e.g. "5d", "7d", "30d", "12h"; empty = disabled)
             PROMO_AGE="${{ env.STABLE_PROMOTION_AGE }}"
             if [[ -z "$PROMO_AGE" ]]; then
-              echo "STABLE_PROMOTION_AGE is empty -- stable promotion disabled"
+              echo "::warning::STABLE_PROMOTION_AGE is empty -- stable promotion is disabled. Set it to a value like '5d', '12h', or '30m' to enable."
               exit 0
             fi
             PROMO_VALUE=$(echo "$PROMO_AGE" | grep -oP '^\d+')
