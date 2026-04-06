@@ -1,0 +1,104 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":configMigration"
+  ],
+  "enabledManagers": [
+    "github-actions",
+    "custom.regex"
+  ],
+  "pinDigests": false,
+  "github-actions": {
+    "managerFilePatterns": [
+      "/(^|/).github/workflows/[^/]+\\.ya?ml$/",
+      "/(^|/).github/actions/[^/]+/action\\.ya?ml$/"
+    ]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track crane (go-containerregistry) pinned fallback versions",
+      "managerFilePatterns": ["/.github/actions/setup-build-env/action\\.yml$/"],
+      "matchStrings": ["CRANE_FALLBACK_VERSIONS=\\(\"(?<currentValue>v[\\d.]+)\""],
+      "depNameTemplate": "google/go-containerregistry",
+      "datasourceTemplate": "github-releases"
+    }
+  ],
+  "labels": [
+    "dependencies",
+    "automated",
+    "github-actions"
+  ],
+  "assignees": [
+    "mekayelanik"
+  ],
+  "reviewers": [
+    "mekayelanik"
+  ],
+  "timezone": "Asia/Dhaka",
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "automerge": true,
+  "platformAutomerge": false,
+  "automergeType": "pr",
+  "automergeStrategy": "squash",
+  "rebaseWhen": "behind-base-branch",
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 5,
+  "minimumReleaseAge": "0 days",
+  "internalChecksFilter": "strict",
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": [
+      "security"
+    ],
+    "minimumReleaseAge": null
+  },
+  "packageRules": [
+    {
+      "description": "Disable pin and digest updates globally",
+      "matchUpdateTypes": [
+        "pin",
+        "digest"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "GitHub Actions: major versions only; disable minor/patch",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "GitHub Actions: major updates as PRs",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash",
+      "labels": [
+        "dependencies",
+        "github-actions"
+      ],
+      "groupName": "github-actions-major"
+    }
+  ],
+  "commitMessagePrefix": "ci: ",
+  "commitMessageAction": "update",
+  "commitMessageTopic": "{{depName}}",
+  "gitIgnoredAuthors": [
+    "renovate[bot]@users.noreply.github.com"
+  ]
+}

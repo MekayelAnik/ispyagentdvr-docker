@@ -1,0 +1,10 @@
+name: Preflight Shell Tests
+description: Run shell syntax and behavior checks used by preflight
+
+runs:
+  using: composite
+  steps:
+    - name: Run preflight shell tests
+      shell: bash
+      run: |
+        bash .github/scripts/preflight-shell-tests.sh
