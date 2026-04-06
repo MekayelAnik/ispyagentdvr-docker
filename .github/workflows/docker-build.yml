@@ -1822,6 +1822,7 @@ jobs:
             PROMO_VALUE=$(echo "$PROMO_AGE" | grep -oP '^\d+')
             PROMO_UNIT=$(echo "$PROMO_AGE" | grep -oP '[a-z]+$')
             case "$PROMO_UNIT" in
+              m) PROMO_SECONDS=$(( PROMO_VALUE * 60 )) ;;
               h) PROMO_SECONDS=$(( PROMO_VALUE * 3600 )) ;;
               d) PROMO_SECONDS=$(( PROMO_VALUE * 86400 )) ;;
               *) PROMO_SECONDS=$(( PROMO_VALUE * 86400 )) ;;
