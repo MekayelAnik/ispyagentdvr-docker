@@ -613,7 +613,7 @@ jobs:
           echo "Checking if base image has updates..."
 
           # Get base image digest (crane digest with retry, falls back to skopeo)
-          BASE_DIGEST=$(run_with_retry_output crane digest "${BASE_IMAGE}" 2>/dev/null || skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Digest' || echo "unknown")
+          BASE_DIGEST=$(run_with_retry_output crane digest "${BASE_IMAGE}" 2>/dev/null || run_with_retry_output skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Digest' || echo "unknown")
           echo "Base image digest: $BASE_DIGEST"
 
           if [ "$BASE_DIGEST" == "unknown" ] || [ -z "$BASE_DIGEST" ]; then
@@ -762,8 +762,8 @@ jobs:
 
           case "$ACTION" in
             "auto-check")
-              # Scan all available versions (up to 20) for missing builds
-              ALL_VERSIONS=$(cat /tmp/available_versions.txt | paste -sd ',' -)
+              # Scan all available versions (up to 20) for missing builds, oldest first
+              ALL_VERSIONS=$(tac /tmp/available_versions.txt | paste -sd ',' -)
               echo "Scanning all available versions for missing builds: $ALL_VERSIONS"
 
               # Use filter_existing_versions to find which ones are missing
