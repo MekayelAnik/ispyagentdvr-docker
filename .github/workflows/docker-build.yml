@@ -188,6 +188,10 @@ env:
   UPDATE_BASE_IMAGE_ENABLED: ${{ vars.UPDATE_BASE_IMAGE_ENABLED || 'false' }}
   # Comma-separated list of versions to exclude from builds (e.g. "7.0.5.0,7.0.6.0")
   EXCLUDE_VERSIONS: ${{ vars.EXCLUDE_VERSIONS || '' }}
+  # How long the latest version must remain current before stable promotion (e.g. "5d", "7d", "30d", "12h")
+  STABLE_PROMOTION_AGE: ${{ vars.STABLE_PROMOTION_AGE || '5d' }}
+  # Number of recent upstream versions to scan for missing builds
+  VERSION_CHECK_COUNT: ${{ vars.VERSION_CHECK_COUNT || '20' }}
   # BuildKit concurrency and log tuning
   EXPORT_CACHE_CONCURRENCY: '4'
   EXPORT_LAYERS_CONCURRENCY: '4'
@@ -367,8 +371,9 @@ jobs:
 
           # Parse the HTML table to extract versions and dates
           # Note: HTML uses <td valign="top"> so we match full td tag and strip with sed
-          grep -oP '<td[^>]*>\d+\.\d+\.\d+\.\d+</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -20 > /tmp/versions.txt
-          grep -oP '<td[^>]*>\d{1,2}/\d{1,2}/\d{4}</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -20 > /tmp/dates.txt
+          VERSION_LIMIT="${{ env.VERSION_CHECK_COUNT }}"
+          grep -oP '<td[^>]*>\d+\.\d+\.\d+\.\d+</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -"$VERSION_LIMIT" > /tmp/versions.txt
+          grep -oP '<td[^>]*>\d{1,2}/\d{1,2}/\d{4}</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -"$VERSION_LIMIT" > /tmp/dates.txt
 
           # Parse beta status: HTML spans multiple lines, so convert to single-line first
           # Then extract each row and check if update info contains (Beta):
@@ -651,23 +656,36 @@ jobs:
 
           LATEST_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo "0")
           CURRENT_EPOCH=$(date +%s)
-          FIVE_DAYS_SECONDS=$((5 * 24 * 60 * 60))
-          DAYS_OLD=$(( (CURRENT_EPOCH - LATEST_EPOCH) / 86400 ))
 
-          echo "Latest non-beta release ($CANDIDATE_VERSION) is $DAYS_OLD days old"
+          # Parse STABLE_PROMOTION_AGE (e.g. "5d", "7d", "30d", "12h")
+          PROMO_AGE="${{ env.STABLE_PROMOTION_AGE }}"
+          PROMO_VALUE=$(echo "$PROMO_AGE" | grep -oP '^\d+')
+          PROMO_UNIT=$(echo "$PROMO_AGE" | grep -oP '[a-z]+$')
+          case "$PROMO_UNIT" in
+            h) PROMO_SECONDS=$(( PROMO_VALUE * 3600 )) ;;
+            d) PROMO_SECONDS=$(( PROMO_VALUE * 86400 )) ;;
+            *) PROMO_SECONDS=$(( PROMO_VALUE * 86400 )) ;; # default to days
+          esac
+
+          AGE_SECONDS=$(( CURRENT_EPOCH - LATEST_EPOCH ))
+          DAYS_OLD=$(( AGE_SECONDS / 86400 ))
+          HOURS_OLD=$(( AGE_SECONDS / 3600 ))
+
+          echo "Latest non-beta release ($CANDIDATE_VERSION) is $DAYS_OLD days old ($HOURS_OLD hours)"
+          echo "Stable promotion threshold: $PROMO_AGE ($PROMO_SECONDS seconds)"
 
           if [ "$FORCE_PROMOTE_STABLE" == "true" ]; then
             echo "should_mark_stable=true" >> $GITHUB_OUTPUT
             echo "stable_version=$CANDIDATE_VERSION" >> $GITHUB_OUTPUT
             echo "Force-promote enabled, selecting $CANDIDATE_VERSION for stable"
-          elif [ $LATEST_EPOCH -gt 0 ] && [ $((CURRENT_EPOCH - LATEST_EPOCH)) -ge $FIVE_DAYS_SECONDS ]; then
+          elif [ $LATEST_EPOCH -gt 0 ] && [ $AGE_SECONDS -ge $PROMO_SECONDS ]; then
             echo "should_mark_stable=true" >> $GITHUB_OUTPUT
             echo "stable_version=$CANDIDATE_VERSION" >> $GITHUB_OUTPUT
-            echo "Version $CANDIDATE_VERSION is $DAYS_OLD days old, eligible for stable"
+            echo "Version $CANDIDATE_VERSION is $DAYS_OLD days old, eligible for stable (threshold: $PROMO_AGE)"
           else
             echo "should_mark_stable=false" >> $GITHUB_OUTPUT
             echo "stable_version=" >> $GITHUB_OUTPUT
-            echo "Version $CANDIDATE_VERSION is less than 5 days old, not eligible for stable yet"
+            echo "Version $CANDIDATE_VERSION not old enough for stable yet (age: ${HOURS_OLD}h, threshold: $PROMO_AGE)"
           fi
 
       - name: Determine versions to build
@@ -1797,8 +1815,18 @@ jobs:
             rm -f "$err_file"; return 1
           }
 
-          # -- 5-day rule check via pipeline-state branch --------
+          # -- Stable promotion age check via pipeline-state branch --------
           if [[ "$FORCE_PROMOTE_STABLE" != "true" ]]; then
+            # Parse STABLE_PROMOTION_AGE (e.g. "5d", "7d", "30d", "12h")
+            PROMO_AGE="${{ env.STABLE_PROMOTION_AGE }}"
+            PROMO_VALUE=$(echo "$PROMO_AGE" | grep -oP '^\d+')
+            PROMO_UNIT=$(echo "$PROMO_AGE" | grep -oP '[a-z]+$')
+            case "$PROMO_UNIT" in
+              h) PROMO_SECONDS=$(( PROMO_VALUE * 3600 )) ;;
+              d) PROMO_SECONDS=$(( PROMO_VALUE * 86400 )) ;;
+              *) PROMO_SECONDS=$(( PROMO_VALUE * 86400 )) ;;
+            esac
+
             LATEST_VERSION_SINCE=""
             if git fetch origin pipeline-state --depth=1 2>/dev/null; then
               LATEST_VERSION_SINCE=$(git show origin/pipeline-state:latest-version-since 2>/dev/null || echo "")
@@ -1807,11 +1835,12 @@ jobs:
             if [[ -n "$LATEST_VERSION_SINCE" ]]; then
               SINCE_EPOCH=$(date -d "$LATEST_VERSION_SINCE" +%s 2>/dev/null || echo "0")
               NOW_EPOCH=$(date +%s)
-              DAYS_AS_LATEST=$(( (NOW_EPOCH - SINCE_EPOCH) / 86400 ))
-              echo "Version $STABLE_VERSION has been latest for $DAYS_AS_LATEST days (since $LATEST_VERSION_SINCE)"
+              AGE_SECONDS=$(( NOW_EPOCH - SINCE_EPOCH ))
+              HOURS_AS_LATEST=$(( AGE_SECONDS / 3600 ))
+              echo "Version $STABLE_VERSION has been latest for ${HOURS_AS_LATEST}h (since $LATEST_VERSION_SINCE, threshold: $PROMO_AGE)"
 
-              if (( DAYS_AS_LATEST < 5 )); then
-                echo "Version has been latest for less than 5 days -- skipping stable promotion"
+              if (( AGE_SECONDS < PROMO_SECONDS )); then
+                echo "Version not old enough for stable promotion (age: ${HOURS_AS_LATEST}h, threshold: $PROMO_AGE)"
                 exit 0
               fi
             else
