@@ -536,13 +536,15 @@ jobs:
       - name: Check existing images in registries
         id: check-existing
         run: |
+          source "${{ github.workspace }}/.github/scripts/lib-retry.sh"
+
           check_image_exists() {
             local registry=$1
             local tag=$2
-            # crane digest: single HEAD request (no body), falls back to skopeo
-            if crane digest "${registry}:${tag}" >/dev/null 2>&1; then
+            # crane digest with retry (HEAD-only), falls back to skopeo with retry
+            if run_with_retry crane digest "${registry}:${tag}" >/dev/null 2>&1; then
               echo "exists"
-            elif skopeo inspect "docker://${registry}:${tag}" > /dev/null 2>&1; then
+            elif run_with_retry skopeo inspect "docker://${registry}:${tag}" > /dev/null 2>&1; then
               echo "exists"
             else
               echo "missing"
@@ -576,6 +578,8 @@ jobs:
         env:
           DEFAULT_IMAGE: ${{ env.DEFAULT_BASE_IMAGE }}
         run: |
+          source "${{ github.workspace }}/.github/scripts/lib-retry.sh"
+
           # Resolve base image from selection (same logic as build-platform job)
           BASE_SELECTION="${{ steps.resolve-base-image.outputs.selection }}"
           CUSTOM_BASE="${{ steps.resolve-base-image.outputs.custom }}"
@@ -608,8 +612,8 @@ jobs:
 
           echo "Checking if base image has updates..."
 
-          # Get base image digest (crane digest: single HEAD request)
-          BASE_DIGEST=$(crane digest "${BASE_IMAGE}" 2>/dev/null || skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Digest' || echo "unknown")
+          # Get base image digest (crane digest with retry, falls back to skopeo)
+          BASE_DIGEST=$(run_with_retry_output crane digest "${BASE_IMAGE}" 2>/dev/null || skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Digest' || echo "unknown")
           echo "Base image digest: $BASE_DIGEST"
 
           if [ "$BASE_DIGEST" == "unknown" ] || [ -z "$BASE_DIGEST" ]; then
@@ -621,12 +625,12 @@ jobs:
           # Check if our latest image exists and get its base layer info
           # We store base image digest in labels during build
           CURRENT_IMAGE="${{ env.DOCKERHUB_REPO }}:${LATEST_VERSION}"
-          CURRENT_BASE_LABEL=$(skopeo inspect "docker://${CURRENT_IMAGE}" 2>/dev/null | jq -r '.Labels["org.opencontainers.image.base.digest"] // empty' || echo "")
+          CURRENT_BASE_LABEL=$(run_with_retry_output skopeo inspect "docker://${CURRENT_IMAGE}" 2>/dev/null | jq -r '.Labels["org.opencontainers.image.base.digest"] // empty' || echo "")
 
           if [ -z "$CURRENT_BASE_LABEL" ]; then
             # Fallback: check image creation time vs base image creation time
-            CURRENT_CREATED=$(skopeo inspect "docker://${CURRENT_IMAGE}" 2>/dev/null | jq -r '.Created' || echo "")
-            BASE_CREATED=$(skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Created' || echo "")
+            CURRENT_CREATED=$(run_with_retry_output skopeo inspect "docker://${CURRENT_IMAGE}" 2>/dev/null | jq -r '.Created' || echo "")
+            BASE_CREATED=$(run_with_retry_output skopeo inspect "docker://${BASE_IMAGE}" 2>/dev/null | jq -r '.Created' || echo "")
 
             if [ -n "$CURRENT_CREATED" ] && [ -n "$BASE_CREATED" ]; then
               CURRENT_EPOCH=$(date -d "$CURRENT_CREATED" +%s 2>/dev/null || echo "0")
@@ -707,6 +711,8 @@ jobs:
       - name: Determine versions to build
         id: determine-versions
         run: |
+          source "${{ github.workspace }}/.github/scripts/lib-retry.sh"
+
           ACTION="${{ steps.set-action.outputs.action }}"
           FORCE_BUILD="${{ github.event.inputs.force_build }}"
           SKIP_EXISTING="${{ github.event.inputs.skip_existing }}"
@@ -730,9 +736,9 @@ jobs:
                   CHECK_TAG="${version}"
                 fi
 
-                # Check if version exists in both registries (crane digest: HEAD-only, falls back to skopeo)
-                DH_EXISTS=$( (crane digest "${{ env.DOCKERHUB_REPO }}:${CHECK_TAG}" >/dev/null 2>&1 || skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${CHECK_TAG}" >/dev/null 2>&1) && echo "yes" || echo "no")
-                GHCR_EXISTS=$( (crane digest "${{ env.GHCR_REPO }}:${CHECK_TAG}" >/dev/null 2>&1 || skopeo inspect "docker://${{ env.GHCR_REPO }}:${CHECK_TAG}" >/dev/null 2>&1) && echo "yes" || echo "no")
+                # Check if version exists in both registries (crane digest with retry, falls back to skopeo with retry)
+                DH_EXISTS=$( (run_with_retry crane digest "${{ env.DOCKERHUB_REPO }}:${CHECK_TAG}" >/dev/null 2>&1 || run_with_retry skopeo inspect "docker://${{ env.DOCKERHUB_REPO }}:${CHECK_TAG}" >/dev/null 2>&1) && echo "yes" || echo "no")
+                GHCR_EXISTS=$( (run_with_retry crane digest "${{ env.GHCR_REPO }}:${CHECK_TAG}" >/dev/null 2>&1 || run_with_retry skopeo inspect "docker://${{ env.GHCR_REPO }}:${CHECK_TAG}" >/dev/null 2>&1) && echo "yes" || echo "no")
 
                 if [ "$DH_EXISTS" == "yes" ] && [ "$GHCR_EXISTS" == "yes" ]; then
                   echo "Skipping version $version (tag: $CHECK_TAG) - already exists in both registries" >&2
