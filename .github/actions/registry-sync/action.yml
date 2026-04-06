@@ -191,8 +191,13 @@ runs:
             fi
 
           elif [[ "$DH_EXISTS" == yes && "$GC_EXISTS" == no ]]; then
-            echo "  ::warning::GHCR missing while Docker Hub has tag -- skipping (primary missing)"
-            SKIPPED_TAGS="$SKIPPED_TAGS $tag(ghcr-missing)"
+            echo "  -> GHCR missing -- syncing Docker Hub -> GHCR"
+            if crane_copy_with_retry "$tag: DH->GHCR" "$dh_ref" "$gc_ref"; then
+              invalidate_cache "$gc_ref"
+              SYNCED_TAGS="$SYNCED_TAGS $tag(DH->GHCR)"
+            else
+              FAILED_TAGS="$FAILED_TAGS $tag"
+            fi
 
           else
             echo "  Not found in either registry -- skipping"
