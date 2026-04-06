@@ -987,9 +987,9 @@ jobs:
           BETA_VERSIONS='${{ steps.fetch-releases.outputs.beta_versions }}'
           PLATFORMS='${{ steps.set-platforms.outputs.platforms }}'
           
-          # If no versions to build, output empty matrix
+          # If no versions to build, output empty string (not [] which causes GitHub Actions empty matrix failure)
           if [ "$VERSIONS" == "[]" ] || [ -z "$VERSIONS" ]; then
-            echo "matrix=[]" >> $GITHUB_OUTPUT
+            echo "matrix=" >> $GITHUB_OUTPUT
             echo "No versions to build, empty matrix"
             exit 0
           fi
