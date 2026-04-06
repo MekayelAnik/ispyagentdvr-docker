@@ -1506,7 +1506,7 @@ jobs:
         with:
           dockerhub_repo: ${{ env.DOCKERHUB_REPO }}
           ghcr_repo: ${{ env.GHCR_REPO }}
-          tags: ${{ needs.check-releases.outputs.latest_version }},latest,stable,${{ needs.check-releases.outputs.versions_to_build }}
+          tags: ${{ needs.check-releases.outputs.latest_version }},latest,stable
 
   # ===========================================================================
   # Job 4: Promote image to latest or stable

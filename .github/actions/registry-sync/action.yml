@@ -192,7 +192,7 @@ runs:
 
           elif [[ "$DH_EXISTS" == yes && "$GC_EXISTS" == no ]]; then
             echo "  ::warning::GHCR missing while Docker Hub has tag -- skipping (primary missing)"
-            FAILED_TAGS="$FAILED_TAGS $tag(ghcr-missing)"
+            SKIPPED_TAGS="$SKIPPED_TAGS $tag(ghcr-missing)"
 
           else
             echo "  Not found in either registry -- skipping"
