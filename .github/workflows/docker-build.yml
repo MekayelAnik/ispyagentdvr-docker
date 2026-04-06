@@ -191,7 +191,7 @@ env:
   # How long the latest version must remain current before stable promotion (e.g. "5d", "7d", "30d", "12h")
   STABLE_PROMOTION_AGE: ${{ vars.STABLE_PROMOTION_AGE || '5d' }}
   # Number of recent upstream versions to scan for missing builds
-  VERSION_CHECK_COUNT: ${{ vars.VERSION_CHECK_COUNT || '20' }}
+  VERSION_CHECK_COUNT: ${{ vars.VERSION_CHECK_COUNT || '10' }}
   # BuildKit concurrency and log tuning
   EXPORT_CACHE_CONCURRENCY: '4'
   EXPORT_LAYERS_CONCURRENCY: '4'
