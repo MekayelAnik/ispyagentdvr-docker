@@ -1465,7 +1465,7 @@ jobs:
       (
         needs.check-releases.outputs.action_type == 'promote-image' ||
         needs.check-releases.outputs.action_type == 'force-promote-latest' ||
-        (needs.check-releases.outputs.action_type == 'auto-check' && needs.check-releases.outputs.latest_version != '' && needs.merge-manifest.result == 'success')
+        (needs.check-releases.outputs.action_type == 'auto-check' && needs.check-releases.outputs.latest_version != '' && needs.merge-manifest.result != 'failure')
       )
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
     concurrency:
