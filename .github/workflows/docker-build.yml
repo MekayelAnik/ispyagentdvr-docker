@@ -657,8 +657,14 @@ jobs:
           LATEST_EPOCH=$(date -d "$YEAR-$MONTH-$DAY" +%s 2>/dev/null || echo "0")
           CURRENT_EPOCH=$(date +%s)
 
-          # Parse STABLE_PROMOTION_AGE (e.g. "5d", "7d", "30d", "12h")
+          # Parse STABLE_PROMOTION_AGE (e.g. "5d", "7d", "30d", "12h"; empty = disabled)
           PROMO_AGE="${{ env.STABLE_PROMOTION_AGE }}"
+          if [[ -z "$PROMO_AGE" ]]; then
+            echo "STABLE_PROMOTION_AGE is empty -- stable promotion disabled"
+            echo "should_mark_stable=false" >> $GITHUB_OUTPUT
+            echo "stable_version=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
           PROMO_VALUE=$(echo "$PROMO_AGE" | grep -oP '^\d+')
           PROMO_UNIT=$(echo "$PROMO_AGE" | grep -oP '[a-z]+$')
           case "$PROMO_UNIT" in
@@ -1817,8 +1823,12 @@ jobs:
 
           # -- Stable promotion age check via pipeline-state branch --------
           if [[ "$FORCE_PROMOTE_STABLE" != "true" ]]; then
-            # Parse STABLE_PROMOTION_AGE (e.g. "5d", "7d", "30d", "12h")
+            # Parse STABLE_PROMOTION_AGE (e.g. "5d", "7d", "30d", "12h"; empty = disabled)
             PROMO_AGE="${{ env.STABLE_PROMOTION_AGE }}"
+            if [[ -z "$PROMO_AGE" ]]; then
+              echo "STABLE_PROMOTION_AGE is empty -- stable promotion disabled"
+              exit 0
+            fi
             PROMO_VALUE=$(echo "$PROMO_AGE" | grep -oP '^\d+')
             PROMO_UNIT=$(echo "$PROMO_AGE" | grep -oP '[a-z]+$')
             case "$PROMO_UNIT" in
