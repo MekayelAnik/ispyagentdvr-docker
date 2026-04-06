@@ -247,19 +247,10 @@ jobs:
             exit 0
           fi
 
-          # Try to read last-built version from pipeline-state orphan branch
-          LAST_VERSION=""
-          if git fetch origin pipeline-state --depth=1 2>/dev/null; then
-            LAST_VERSION=$(git show origin/pipeline-state:last-built-version 2>/dev/null || echo "")
-          fi
-
-          if [[ -n "$LAST_VERSION" && "$LAST_VERSION" == "$CURRENT_VERSION" ]]; then
-            echo "should_continue=false" >> "$GITHUB_OUTPUT"
-            echo "Pipeline state shows version $CURRENT_VERSION already built -- skipping"
-          else
-            echo "should_continue=true" >> "$GITHUB_OUTPUT"
-            echo "New version detected (last: ${LAST_VERSION:-none}, current: $CURRENT_VERSION)"
-          fi
+          # Always continue -- auto-check now scans all 20 versions for missing builds,
+          # not just the latest. The full registry check happens in check-releases.
+          echo "should_continue=true" >> "$GITHUB_OUTPUT"
+          echo "Current upstream latest: $CURRENT_VERSION -- continuing to full scan"
 
   # ===========================================================================
   # Job 1: Check for new releases and validate requested versions
@@ -765,25 +756,43 @@ jobs:
 
           case "$ACTION" in
             "auto-check")
-              DOCKERHUB_STATUS="${{ steps.check-existing.outputs.dockerhub_latest_status }}"
-              GHCR_STATUS="${{ steps.check-existing.outputs.ghcr_latest_status }}"
+              # Scan all available versions (up to 20) for missing builds
+              ALL_VERSIONS=$(cat /tmp/available_versions.txt | paste -sd ',' -)
+              echo "Scanning all available versions for missing builds: $ALL_VERSIONS"
 
-              # Trigger build if: image missing OR force build OR (base image updated AND update enabled)
-              if [ "$DOCKERHUB_STATUS" == "missing" ] || [ "$GHCR_STATUS" == "missing" ] || [ "$FORCE_BUILD" == "true" ] || \
-                 ([ "$BASE_IMAGE_UPDATED" == "true" ] && [ "$UPDATE_BASE_IMAGE" == "true" ]); then
-                echo "versions=$LATEST_VERSION" >> $GITHUB_OUTPUT
-                echo "versions_json=[\"$LATEST_VERSION\"]" >> $GITHUB_OUTPUT
-                echo "should_build=true" >> $GITHUB_OUTPUT
-                if [ "$BASE_IMAGE_UPDATED" == "true" ] && [ "$UPDATE_BASE_IMAGE" == "true" ]; then
-                  echo "Will rebuild latest version due to base image update: $LATEST_VERSION"
-                else
-                  echo "Will build latest version: $LATEST_VERSION"
+              # Use filter_existing_versions to find which ones are missing
+              # Temporarily force skip_existing behavior for auto-check
+              ORIG_SKIP="$SKIP_EXISTING"
+              SKIP_EXISTING="true"
+              MISSING_VERSIONS=$(filter_existing_versions "$ALL_VERSIONS")
+              SKIP_EXISTING="$ORIG_SKIP"
+
+              # Also rebuild latest if base image updated
+              if [ "$BASE_IMAGE_UPDATED" == "true" ] && [ "$UPDATE_BASE_IMAGE" == "true" ]; then
+                echo "Base image updated -- ensuring latest version is included"
+                if ! echo ",$MISSING_VERSIONS," | grep -q ",$LATEST_VERSION,"; then
+                  if [ -z "$MISSING_VERSIONS" ]; then
+                    MISSING_VERSIONS="$LATEST_VERSION"
+                  else
+                    MISSING_VERSIONS="$LATEST_VERSION,$MISSING_VERSIONS"
+                  fi
                 fi
+              fi
+
+              if [ -n "$MISSING_VERSIONS" ] || [ "$FORCE_BUILD" == "true" ]; then
+                if [ "$FORCE_BUILD" == "true" ] && [ -z "$MISSING_VERSIONS" ]; then
+                  MISSING_VERSIONS="$LATEST_VERSION"
+                fi
+                JSON_ARRAY=$(echo "$MISSING_VERSIONS" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+                echo "versions=$MISSING_VERSIONS" >> $GITHUB_OUTPUT
+                echo "versions_json=$JSON_ARRAY" >> $GITHUB_OUTPUT
+                echo "should_build=true" >> $GITHUB_OUTPUT
+                echo "Will build missing versions: $MISSING_VERSIONS"
               else
                 echo "versions=" >> $GITHUB_OUTPUT
                 echo "versions_json=[]" >> $GITHUB_OUTPUT
                 echo "should_build=false" >> $GITHUB_OUTPUT
-                echo "Latest version already exists in both registries (base image unchanged)"
+                echo "All versions exist in both registries (base image unchanged)"
               fi
               ;;
 
