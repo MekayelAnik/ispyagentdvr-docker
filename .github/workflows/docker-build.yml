@@ -2053,7 +2053,8 @@ jobs:
     if: |
       always() &&
       needs.check-releases.result == 'success' &&
-      needs.merge-manifest.result == 'success'
+      needs.merge-manifest.result == 'success' &&
+      (needs.sync-registries.result == 'success' || needs.sync-registries.result == 'skipped')
     permissions:
       contents: write
 
