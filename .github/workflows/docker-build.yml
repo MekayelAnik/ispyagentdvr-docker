@@ -1298,10 +1298,34 @@ jobs:
         version: ${{ fromJson(needs.check-releases.outputs.versions_json || '["_skip_"]') }}
 
     steps:
+      - name: Download all digests for version
+        id: download-digests
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digest-${{ matrix.version }}-*
+          merge-multiple: true
+
+      - name: Check if merge is needed
+        id: check-digests
+        shell: bash
+        run: |
+          if [[ -d /tmp/digests ]] && ls /tmp/digests/* >/dev/null 2>&1; then
+            echo "has_digests=true" >> "$GITHUB_OUTPUT"
+            echo "Found digests to merge:"
+            ls -la /tmp/digests/
+          else
+            echo "has_digests=false" >> "$GITHUB_OUTPUT"
+            echo "No digests found — all builds were skipped (tags already exist)"
+          fi
+
       - name: Checkout
+        if: steps.check-digests.outputs.has_digests == 'true'
         uses: actions/checkout@v6
 
       - name: Setup build environment
+        if: steps.check-digests.outputs.has_digests == 'true'
         uses: ./.github/actions/setup-build-env
         with:
           do_checkout: 'false'
@@ -1314,14 +1338,8 @@ jobs:
           ghcr_actor: ${{ github.actor }}
           ghcr_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download all digests for version
-        uses: actions/download-artifact@v8
-        with:
-          path: /tmp/digests
-          pattern: digest-${{ matrix.version }}-*
-          merge-multiple: true
-
       - name: List downloaded digests
+        if: steps.check-digests.outputs.has_digests == 'true'
         run: |
           echo "Downloaded digests for ${{ matrix.version }}:"
           ls -la /tmp/digests/
@@ -1331,6 +1349,7 @@ jobs:
           done
 
       - name: Determine image tags
+        if: steps.check-digests.outputs.has_digests == 'true'
         id: tags
         run: |
           VERSION="${{ matrix.version }}"
@@ -1389,7 +1408,7 @@ jobs:
           echo "GHCR tags: $GHCR_TAGS"
 
       - name: Create and push multi-arch manifest (GHCR)
-        if: github.event.inputs.push_to_ghcr != 'false'
+        if: steps.check-digests.outputs.has_digests == 'true' && github.event.inputs.push_to_ghcr != 'false'
         run: |
           # Rate-limit aware retry helper
           imagetools_create_rl() {
@@ -1414,6 +1433,7 @@ jobs:
 
           SOURCES=""
           for digest_file in /tmp/digests/*; do
+            [[ -f "$digest_file" ]] || continue
             digest="sha256:$(basename $digest_file)"
             SOURCES="$SOURCES ${{ env.GHCR_REPO }}@${digest}"
           done
@@ -1424,7 +1444,7 @@ jobs:
             $SOURCES
 
       - name: Create and push multi-arch manifest (Docker Hub)
-        if: github.event.inputs.push_to_dockerhub != 'false'
+        if: steps.check-digests.outputs.has_digests == 'true' && github.event.inputs.push_to_dockerhub != 'false'
         run: |
           imagetools_create_rl() {
             local desc="$1"; shift
@@ -1455,6 +1475,7 @@ jobs:
 
           SOURCES=""
           for digest_file in /tmp/digests/*; do
+            [[ -f "$digest_file" ]] || continue
             digest="sha256:$(basename $digest_file)"
             SOURCES="$SOURCES ${SOURCE_REPO}@${digest}"
           done
@@ -1465,7 +1486,7 @@ jobs:
             $SOURCES
 
       - name: Run Trivy vulnerability scanner
-        if: github.event.inputs.run_security_scan != 'false'
+        if: steps.check-digests.outputs.has_digests == 'true' && github.event.inputs.run_security_scan != 'false'
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: '${{ env.DOCKERHUB_REPO }}:${{ steps.tags.outputs.version_tag }}'
@@ -1476,7 +1497,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Trivy scan results
-        if: github.event.inputs.run_security_scan != 'false'
+        if: steps.check-digests.outputs.has_digests == 'true' && github.event.inputs.run_security_scan != 'false'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results-${{ matrix.version }}.sarif'
