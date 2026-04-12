@@ -122,7 +122,7 @@ runs:
         esac
 
         # Pinned fallback versions in case API + latest download both fail
-        CRANE_FALLBACK_VERSIONS=("v0.21.3" "v0.21.2" "v0.21.1" "v0.20.3")
+        CRANE_FALLBACK_VERSIONS=("v0.21.5" "v0.21.2" "v0.21.1" "v0.20.3")
 
         try_download() {
           local ver="$1" auth_flag="${2:-}"
