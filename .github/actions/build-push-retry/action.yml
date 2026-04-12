@@ -41,9 +41,6 @@ outputs:
   digest:
     description: 'Image digest from successful build'
     value: ${{ steps.resolve.outputs.digest }}
-  metadata:
-    description: 'Build metadata from successful build'
-    value: ${{ steps.resolve.outputs.metadata }}
 
 runs:
   using: 'composite'
@@ -91,18 +88,8 @@ runs:
       run: |
         if [[ "${{ steps.build1.outcome }}" == "success" ]]; then
           echo "digest=${{ steps.build1.outputs.digest }}" >> "$GITHUB_OUTPUT"
-          {
-            echo "metadata<<METADATA_EOF"
-            echo '${{ steps.build1.outputs.metadata }}'
-            echo "METADATA_EOF"
-          } >> "$GITHUB_OUTPUT"
           echo "Build succeeded on attempt 1"
         else
           echo "digest=${{ steps.build2.outputs.digest }}" >> "$GITHUB_OUTPUT"
-          {
-            echo "metadata<<METADATA_EOF"
-            echo '${{ steps.build2.outputs.metadata }}'
-            echo "METADATA_EOF"
-          } >> "$GITHUB_OUTPUT"
           echo "Build succeeded on attempt 2 (retry)"
         fi
