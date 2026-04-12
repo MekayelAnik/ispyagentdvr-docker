@@ -91,10 +91,18 @@ runs:
       run: |
         if [[ "${{ steps.build1.outcome }}" == "success" ]]; then
           echo "digest=${{ steps.build1.outputs.digest }}" >> "$GITHUB_OUTPUT"
-          echo "metadata=${{ steps.build1.outputs.metadata }}" >> "$GITHUB_OUTPUT"
+          {
+            echo "metadata<<METADATA_EOF"
+            echo '${{ steps.build1.outputs.metadata }}'
+            echo "METADATA_EOF"
+          } >> "$GITHUB_OUTPUT"
           echo "Build succeeded on attempt 1"
         else
           echo "digest=${{ steps.build2.outputs.digest }}" >> "$GITHUB_OUTPUT"
-          echo "metadata=${{ steps.build2.outputs.metadata }}" >> "$GITHUB_OUTPUT"
+          {
+            echo "metadata<<METADATA_EOF"
+            echo '${{ steps.build2.outputs.metadata }}'
+            echo "METADATA_EOF"
+          } >> "$GITHUB_OUTPUT"
           echo "Build succeeded on attempt 2 (retry)"
         fi
