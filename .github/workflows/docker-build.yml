@@ -1224,7 +1224,7 @@ jobs:
 
       - name: Build and push by digest
         id: build-push
-        uses: docker/build-push-action@v7
+        uses: ./.github/actions/build-push-retry
         with:
           context: .
           file: ./Dockerfile.ispyagentdvr-docker

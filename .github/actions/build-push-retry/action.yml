@@ -1,0 +1,100 @@
+name: 'Build and Push with Retry'
+description: 'Wraps docker/build-push-action@v7 with automatic retry on transient failures'
+
+inputs:
+  context:
+    description: 'Build context'
+    required: false
+    default: '.'
+  file:
+    description: 'Dockerfile path'
+    required: true
+  platforms:
+    description: 'Target platforms'
+    required: false
+  outputs:
+    description: 'Build outputs'
+    required: false
+  cache-from:
+    description: 'Cache sources'
+    required: false
+  cache-to:
+    description: 'Cache destinations'
+    required: false
+  build-args:
+    description: 'Build arguments'
+    required: false
+  provenance:
+    description: 'Provenance attestation'
+    required: false
+    default: 'false'
+  sbom:
+    description: 'SBOM attestation'
+    required: false
+    default: 'false'
+  retry-wait-seconds:
+    description: 'Seconds to wait before retry'
+    required: false
+    default: '30'
+
+outputs:
+  digest:
+    description: 'Image digest from successful build'
+    value: ${{ steps.resolve.outputs.digest }}
+  metadata:
+    description: 'Build metadata from successful build'
+    value: ${{ steps.resolve.outputs.metadata }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 'Build and push (attempt 1)'
+      id: build1
+      continue-on-error: true
+      uses: docker/build-push-action@v7
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.file }}
+        platforms: ${{ inputs.platforms }}
+        outputs: ${{ inputs.outputs }}
+        cache-from: ${{ inputs.cache-from }}
+        cache-to: ${{ inputs.cache-to }}
+        build-args: ${{ inputs.build-args }}
+        provenance: ${{ inputs.provenance }}
+        sbom: ${{ inputs.sbom }}
+
+    - name: 'Wait before retry'
+      if: steps.build1.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::Build attempt 1 failed. Retrying in ${{ inputs.retry-wait-seconds }}s..."
+        sleep ${{ inputs.retry-wait-seconds }}
+
+    - name: 'Build and push (attempt 2 - retry)'
+      id: build2
+      if: steps.build1.outcome == 'failure'
+      uses: docker/build-push-action@v7
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.file }}
+        platforms: ${{ inputs.platforms }}
+        outputs: ${{ inputs.outputs }}
+        cache-from: ${{ inputs.cache-from }}
+        cache-to: ${{ inputs.cache-to }}
+        build-args: ${{ inputs.build-args }}
+        provenance: ${{ inputs.provenance }}
+        sbom: ${{ inputs.sbom }}
+
+    - name: 'Resolve outputs'
+      id: resolve
+      shell: bash
+      run: |
+        if [[ "${{ steps.build1.outcome }}" == "success" ]]; then
+          echo "digest=${{ steps.build1.outputs.digest }}" >> "$GITHUB_OUTPUT"
+          echo "metadata=${{ steps.build1.outputs.metadata }}" >> "$GITHUB_OUTPUT"
+          echo "Build succeeded on attempt 1"
+        else
+          echo "digest=${{ steps.build2.outputs.digest }}" >> "$GITHUB_OUTPUT"
+          echo "metadata=${{ steps.build2.outputs.metadata }}" >> "$GITHUB_OUTPUT"
+          echo "Build succeeded on attempt 2 (retry)"
+        fi
