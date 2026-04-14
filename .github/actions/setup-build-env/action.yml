@@ -50,23 +50,48 @@ runs:
       if: inputs.do_checkout == 'true'
       uses: actions/checkout@v6
 
+    - name: Login registries (before buildx — GHCR credentials needed to pull BuildKit image)
+      if: inputs.login_dockerhub == 'true' || inputs.login_ghcr == 'true'
+      uses: ./.github/actions/registry-login
+      with:
+        dockerhub_username: ${{ inputs.dockerhub_username }}
+        dockerhub_token: ${{ inputs.dockerhub_token }}
+        ghcr_actor: ${{ inputs.ghcr_actor }}
+        ghcr_token: ${{ inputs.ghcr_token }}
+        push_to_dockerhub: ${{ inputs.login_dockerhub }}
+
     - name: Set up QEMU (all non-native — amd64 is native on GHA runners)
       if: inputs.setup_qemu == 'true'
       uses: docker/setup-qemu-action@v4
       with:
         platforms: arm64,arm,s390x,ppc64le,riscv64,mips64le
 
+    - name: Resolve BuildKit image (GHCR mirror → Docker Hub fallback)
+      if: inputs.setup_buildx == 'true'
+      id: buildkit
+      shell: bash
+      run: |
+        GHCR_IMAGE="ghcr.io/mekayelanik/base-images/moby/buildkit:master"
+        FALLBACK_IMAGE="moby/buildkit:master"
+        if docker manifest inspect "$GHCR_IMAGE" >/dev/null 2>&1; then
+          echo "Using GHCR mirror: $GHCR_IMAGE"
+          echo "image=$GHCR_IMAGE" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::GHCR mirror unavailable, falling back to Docker Hub"
+          echo "image=$FALLBACK_IMAGE" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Set up Docker Buildx (tuned for CI)
       if: inputs.setup_buildx == 'true'
       uses: docker/setup-buildx-action@v4
       with:
         driver-opts: |
-          image=moby/buildkit:master
+          image=${{ steps.buildkit.outputs.image }}
           network=host
         buildkitd-flags: --allow-insecure-entitlement network.host
         buildkitd-config-inline: |
           [dns]
-            nameservers = ["1.1.1.1", "76.76.2.0", "95.161.161.161", "8.8.8.8"]
+            nameservers = ["9.9.9.9", "1.1.1.1", "149.112.112.112", "1.0.0.1"]
             options = ["ndots:0", "attempts:2", "timeout:3"]
           [history]
             maxAge = 0
@@ -87,16 +112,6 @@ runs:
               keepBytes = 8000000000
           [registry."docker.io"]
             mirrors = ["mirror.gcr.io"]
-
-    - name: Login registries
-      if: inputs.login_dockerhub == 'true' || inputs.login_ghcr == 'true'
-      uses: ./.github/actions/registry-login
-      with:
-        dockerhub_username: ${{ inputs.dockerhub_username }}
-        dockerhub_token: ${{ inputs.dockerhub_token }}
-        ghcr_actor: ${{ inputs.ghcr_actor }}
-        ghcr_token: ${{ inputs.ghcr_token }}
-        push_to_dockerhub: ${{ inputs.login_dockerhub }}
         push_to_ghcr: ${{ inputs.login_ghcr }}
 
     - name: Install crane (API-efficient registry tool)
