@@ -1070,7 +1070,7 @@ jobs:
       cancel-in-progress: false
     strategy:
       fail-fast: false
-      max-parallel: 6
+      max-parallel: 20
       matrix:
         include: ${{ fromJson(needs.check-releases.outputs.build_matrix || '[{"skip":"true","version":"none","platform":"none","platform_slug":"skip","is_beta":"false","runner":"ubuntu-24.04"}]') }}
 
