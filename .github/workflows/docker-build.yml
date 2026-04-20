@@ -1589,7 +1589,8 @@ jobs:
         needs.check-releases.outputs.action_type == 'promote-image' ||
         needs.check-releases.outputs.action_type == 'force-promote-latest' ||
         (needs.check-releases.outputs.action_type == 'auto-check' && needs.merge-manifest.result != 'failure' &&
-         (needs.check-releases.outputs.latest_version != '' || needs.check-releases.outputs.latest_needs_promote == 'true'))
+         needs.check-releases.outputs.latest_needs_promote == 'true' &&
+         needs.check-releases.outputs.latest_is_beta != 'true')
       )
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
     concurrency:
@@ -1643,6 +1644,11 @@ jobs:
             FORCE_LATEST="true"
           elif [[ "$ACTION" == "auto-check" ]]; then
             # auto-check: promote latest_version to :latest
+            # Skip when upstream latest is beta — merge-manifest already pushes :beta rolling tag
+            if [[ "${{ needs.check-releases.outputs.latest_is_beta }}" == "true" ]]; then
+              echo "Upstream latest (${{ needs.check-releases.outputs.latest_version }}) is beta -- :latest promotion skipped"
+              exit 0
+            fi
             SOURCE="${{ needs.check-releases.outputs.latest_version }}"
             TARGET="latest"
           else
