@@ -91,9 +91,9 @@
       <td>⚠️ LATEST BETA for "BETA TESTING". Backup config before trying!!! Discouraged to use on mission-critical environments!!! ⚠️</td>
     </tr>
     <tr>
-      <td align="center">7.4.4.0</td>
+      <td align="center">7.4.5.0</td>
       <td align="center">✅</td>
-      <td>"iSpy Agent DVR" Static version 7.4.4.0 image</td>
+      <td>"iSpy Agent DVR" Static version 7.4.5.0 image</td>
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
