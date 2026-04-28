@@ -66,20 +66,56 @@ runs:
       with:
         platforms: arm64,arm,s390x,ppc64le,riscv64,mips64le
 
-    - name: Resolve BuildKit image (GHCR mirror → Docker Hub fallback)
+    - name: Resolve and pre-pull BuildKit image (retry-hardened, GHCR mirror → Docker Hub fallback)
       if: inputs.setup_buildx == 'true'
       id: buildkit
       shell: bash
       run: |
+        set -u
         GHCR_IMAGE="ghcr.io/mekayelanik/base-images/moby/buildkit:master"
         FALLBACK_IMAGE="moby/buildkit:master"
-        if docker manifest inspect "$GHCR_IMAGE" >/dev/null 2>&1; then
-          echo "Using GHCR mirror: $GHCR_IMAGE"
-          echo "image=$GHCR_IMAGE" >> "$GITHUB_OUTPUT"
+
+        # Retry helper: cmd retried up to N times with exponential backoff
+        retry() {
+          local n=0 max=4 delay=3
+          until "$@"; do
+            n=$((n+1))
+            if [ "$n" -ge "$max" ]; then
+              return 1
+            fi
+            echo "::warning::Attempt $n/$max failed for: $* — retrying in ${delay}s"
+            sleep "$delay"
+            delay=$((delay*2))
+          done
+          return 0
+        }
+
+        probe() { timeout 20 docker manifest inspect "$1" >/dev/null 2>&1; }
+        pullit() { timeout 90 docker pull "$1"; }
+
+        IMAGE=""
+        if retry probe "$GHCR_IMAGE"; then
+          echo "GHCR mirror reachable: $GHCR_IMAGE"
+          if retry pullit "$GHCR_IMAGE"; then
+            IMAGE="$GHCR_IMAGE"
+          else
+            echo "::warning::GHCR mirror probe ok but pull failed, falling back to Docker Hub"
+          fi
         else
-          echo "::warning::GHCR mirror unavailable, falling back to Docker Hub"
-          echo "image=$FALLBACK_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "::warning::GHCR mirror unreachable, falling back to Docker Hub"
         fi
+
+        if [ -z "$IMAGE" ]; then
+          if retry pullit "$FALLBACK_IMAGE"; then
+            IMAGE="$FALLBACK_IMAGE"
+          else
+            echo "::error::Failed to pull BuildKit image from both GHCR mirror and Docker Hub"
+            exit 1
+          fi
+        fi
+
+        echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+        echo "Selected BuildKit image: $IMAGE"
 
     - name: Set up Docker Buildx (tuned for CI)
       if: inputs.setup_buildx == 'true'
@@ -112,7 +148,6 @@ runs:
               keepBytes = 8000000000
           [registry."docker.io"]
             mirrors = ["mirror.gcr.io"]
-        push_to_ghcr: ${{ inputs.login_ghcr }}
 
     - name: Install crane (API-efficient registry tool)
       if: inputs.install_crane != 'false'
