@@ -2104,6 +2104,15 @@ jobs:
             PREV_LATEST_SINCE=$(git show origin/pipeline-state:latest-version-since 2>/dev/null || echo "")
           fi
 
+          # Early-exit: version unchanged and state already initialized. Avoids
+          # the daily-churn commit that would otherwise fire on every cron tick
+          # — last-built-time is rewritten to NOW each run, so git diff sees a
+          # non-empty staged delta even when nothing meaningful changed.
+          if [[ -n "$PREV_VERSION" && "$LATEST_VERSION" == "$PREV_VERSION" && -n "$PREV_LATEST_SINCE" ]]; then
+            echo "Version unchanged ($LATEST_VERSION) and state already initialized -- skipping commit"
+            exit 0
+          fi
+
           # Determine latest-version-since: reset if version changed, preserve if same
           if [[ "$LATEST_VERSION" != "$PREV_VERSION" || -z "$PREV_LATEST_SINCE" ]]; then
             LATEST_SINCE="$NOW"
