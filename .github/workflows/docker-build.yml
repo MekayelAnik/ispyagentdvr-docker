@@ -345,6 +345,9 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # Drop runner-image baggage we don't need (Chrome apt repo flakes on
+          # mirror sync, e.g. "File has unexpected size" — see run 26055170793).
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
           sudo apt-get update
           sudo apt-get install -y curl jq skopeo
 
