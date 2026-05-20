@@ -32,6 +32,9 @@ inputs:
     description: 'SBOM attestation'
     required: false
     default: 'false'
+  annotations:
+    description: 'OCI annotations'
+    required: false
   retry-wait-seconds:
     description: 'Seconds to wait before retry'
     required: false
@@ -59,6 +62,7 @@ runs:
         build-args: ${{ inputs.build-args }}
         provenance: ${{ inputs.provenance }}
         sbom: ${{ inputs.sbom }}
+        annotations: ${{ inputs.annotations }}
 
     - name: 'Wait before retry'
       if: steps.build1.outcome == 'failure'
@@ -81,6 +85,7 @@ runs:
         build-args: ${{ inputs.build-args }}
         provenance: ${{ inputs.provenance }}
         sbom: ${{ inputs.sbom }}
+        annotations: ${{ inputs.annotations }}
 
     - name: 'Resolve outputs'
       id: resolve

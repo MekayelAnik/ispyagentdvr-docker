@@ -1242,6 +1242,17 @@ jobs:
           # Security attestations
           provenance: mode=max
           sbom: true
+          # OCI annotations
+          annotations: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=iSpy AgentDVR Docker
+            org.opencontainers.image.licenses=GPL-3.0
+            org.opencontainers.image.title=ispyagentdvr-docker
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+            org.opencontainers.image.authors=MD. MEKAYEL ANIK <mekayel.anik@gmail.com>
+            org.opencontainers.image.vendor=MD. MEKAYEL ANIK
+            dev.mekayelanik.country-of-origin=Bangladesh
+            dev.mekayelanik.message=== Free Palestine ==
           # Build arguments
           build-args: |
             BASE_IMAGE=${{ steps.prepare.outputs.base_image }}
@@ -1441,8 +1452,19 @@ jobs:
             SOURCES="$SOURCES ${{ env.GHCR_REPO }}@${digest}"
           done
 
+          ANNO_ARGS=()
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.source=https://github.com/${{ github.repository }}")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.description=iSpy AgentDVR Docker")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.licenses=GPL-3.0")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.title=ispyagentdvr-docker")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.url=https://github.com/${{ github.repository }}")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.authors=MD. MEKAYEL ANIK <mekayel.anik@gmail.com>")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.vendor=MD. MEKAYEL ANIK")
+          ANNO_ARGS+=(--annotation "index:dev.mekayelanik.country-of-origin=Bangladesh")
+          ANNO_ARGS+=(--annotation "index:dev.mekayelanik.message=== Free Palestine ==")
           echo "Creating multi-arch manifest for GHCR..."
           imagetools_create_rl "GHCR manifest" \
+            "${ANNO_ARGS[@]}" \
             ${{ steps.tags.outputs.ghcr_tags }} \
             $SOURCES
 
@@ -1483,8 +1505,19 @@ jobs:
             SOURCES="$SOURCES ${SOURCE_REPO}@${digest}"
           done
 
+          ANNO_ARGS=()
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.source=https://github.com/${{ github.repository }}")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.description=iSpy AgentDVR Docker")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.licenses=GPL-3.0")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.title=ispyagentdvr-docker")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.url=https://github.com/${{ github.repository }}")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.authors=MD. MEKAYEL ANIK <mekayel.anik@gmail.com>")
+          ANNO_ARGS+=(--annotation "index:org.opencontainers.image.vendor=MD. MEKAYEL ANIK")
+          ANNO_ARGS+=(--annotation "index:dev.mekayelanik.country-of-origin=Bangladesh")
+          ANNO_ARGS+=(--annotation "index:dev.mekayelanik.message=== Free Palestine ==")
           echo "Creating multi-arch manifest for Docker Hub (sourcing from GHCR)..."
           imagetools_create_rl "Docker Hub manifest" \
+            "${ANNO_ARGS[@]}" \
             ${{ steps.tags.outputs.dockerhub_tags }} \
             $SOURCES
 
