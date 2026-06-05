@@ -35,6 +35,15 @@ inputs:
   annotations:
     description: 'OCI annotations'
     required: false
+  labels:
+    description: 'OCI image labels'
+    required: false
+  allow:
+    description: 'BuildKit entitlements to allow (e.g. network.host)'
+    required: false
+  build-contexts:
+    description: 'Additional named build contexts'
+    required: false
   retry-wait-seconds:
     description: 'Seconds to wait before retry'
     required: false
@@ -63,6 +72,9 @@ runs:
         provenance: ${{ inputs.provenance }}
         sbom: ${{ inputs.sbom }}
         annotations: ${{ inputs.annotations }}
+        labels: ${{ inputs.labels }}
+        allow: ${{ inputs.allow }}
+        build-contexts: ${{ inputs.build-contexts }}
 
     - name: 'Wait before retry'
       if: steps.build1.outcome == 'failure'
@@ -86,6 +98,9 @@ runs:
         provenance: ${{ inputs.provenance }}
         sbom: ${{ inputs.sbom }}
         annotations: ${{ inputs.annotations }}
+        labels: ${{ inputs.labels }}
+        allow: ${{ inputs.allow }}
+        build-contexts: ${{ inputs.build-contexts }}
 
     - name: 'Resolve outputs'
       id: resolve
