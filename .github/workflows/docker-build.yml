@@ -1537,6 +1537,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: '${{ env.DOCKERHUB_REPO }}:${{ steps.tags.outputs.version_tag }}'
+          version: 'v0.71.0'
           format: 'sarif'
           output: 'trivy-results-${{ matrix.version }}.sarif'
           severity: 'CRITICAL,HIGH'
