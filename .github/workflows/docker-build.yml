@@ -297,8 +297,18 @@ jobs:
             echo "action=auto-check" >> $GITHUB_OUTPUT
             echo "Running scheduled auto-check (trigger: ${{ github.event_name }})..."
           else
-            echo "action=${{ github.event.inputs.action }}" >> $GITHUB_OUTPUT
-            echo "Running manual action: ${{ github.event.inputs.action }}"
+            ACTION="${{ github.event.inputs.action }}"
+            VERSIONS_INPUT="${{ github.event.inputs.versions }}"
+            # If specific versions are passed with the default auto-check action,
+            # honor them: build exactly those instead of sweeping the last N
+            # releases. Prevents an unintended mass rebuild when a version is
+            # typed but the action dropdown is left on auto-check.
+            if [ "$ACTION" == "auto-check" ] && [ -n "$VERSIONS_INPUT" ]; then
+              echo "versions input ('$VERSIONS_INPUT') provided with auto-check -- routing to build-versions"
+              ACTION="build-versions"
+            fi
+            echo "action=$ACTION" >> $GITHUB_OUTPUT
+            echo "Running manual action: $ACTION"
           fi
 
       - name: Set platforms
