@@ -97,6 +97,7 @@ on:
         options:
           - 'latest'
           - 'stable'
+          - 'beta'
         default: 'latest'
 
       # --- Build Behavior Options (Checkboxes) ---
@@ -1691,6 +1692,12 @@ jobs:
             # Manual promote-image
             SOURCE="${{ github.event.inputs.promote_version }}"
             TARGET="${{ github.event.inputs.promote_tag }}"
+            # Beta builds are tagged VERSION-beta, so resolve the source tag
+            # when promoting to :beta. A bare version (7.5.3.0) or an explicit
+            # 7.5.3.0-beta both work.
+            if [[ "$TARGET" == "beta" && -n "$SOURCE" && "$SOURCE" != *-beta ]]; then
+              SOURCE="${SOURCE}-beta"
+            fi
           fi
 
           if [[ -z "$SOURCE" ]]; then
