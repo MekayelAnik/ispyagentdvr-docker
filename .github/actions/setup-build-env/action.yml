@@ -48,7 +48,7 @@ runs:
   steps:
     - name: Checkout
       if: inputs.do_checkout == 'true'
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
 
     - name: Login registries (before buildx — GHCR credentials needed to pull BuildKit image)
       if: inputs.login_dockerhub == 'true' || inputs.login_ghcr == 'true'
