@@ -216,7 +216,7 @@ jobs:
       should_continue: ${{ steps.state.outputs.should_continue }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -288,7 +288,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set action type
         id: set-action
@@ -1090,7 +1090,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Free disk space
         run: |
@@ -1347,7 +1347,7 @@ jobs:
 
       - name: Checkout
         if: steps.check-digests.outputs.has_digests == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup build environment
         if: steps.check-digests.outputs.has_digests == 'true'
@@ -1602,7 +1602,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup build environment
         uses: ./.github/actions/setup-build-env
@@ -1660,7 +1660,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup build environment
         uses: ./.github/actions/setup-build-env
@@ -1846,7 +1846,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup build environment
         uses: ./.github/actions/setup-build-env
@@ -2040,7 +2040,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
@@ -2141,7 +2141,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -2213,7 +2213,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout main
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: main
           token: ${{ github.token }}
@@ -2264,7 +2264,7 @@ jobs:
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: main
 
