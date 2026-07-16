@@ -183,7 +183,7 @@ env:
   GHCR_REPO: ${{ vars.GHCR_REPO || 'ghcr.io/mekayelanik/ispyagentdvr' }}
   DEFAULT_PLATFORMS: ${{ vars.DEFAULT_PLATFORMS || 'linux/amd64,linux/arm64,linux/arm/v7' }}
   BINARY_BASE_URL: ${{ vars.BINARY_BASE_URL || 'https://files.ispyconnect.com/downloads' }}
-  RELEASE_URL: ${{ vars.RELEASE_URL || 'https://www.ispyconnect.com/producthistory.aspx?productid=27' }}
+  RELEASE_URL: ${{ vars.RELEASE_URL || 'https://www.ispyconnect.com/producthistory?productid=27' }}
   DEFAULT_BASE_IMAGE: ${{ vars.DEFAULT_BASE_IMAGE || 'mekayelanik/ispyagentdvr-base-image:latest' }}
   # Base image update check: set to 'true' to enable automatic rebuilds when base image changes
   UPDATE_BASE_IMAGE_ENABLED: ${{ vars.UPDATE_BASE_IMAGE_ENABLED || 'false' }}
@@ -244,7 +244,7 @@ jobs:
 
           # Fetch current latest version from upstream (lightweight curl + grep)
           CURRENT_VERSION=""
-          if CURRENT_VERSION=$(curl -sf "$RELEASE_URL" | grep -oP '<td[^>]*>\d+\.\d+\.\d+\.\d+</td>' | head -1 | sed 's/<[^>]*>//g'); then
+          if CURRENT_VERSION=$(curl -sfL "$RELEASE_URL" | grep -oP '<td[^>]*>\d+\.\d+\.\d+\.\d+</td>' | head -1 | sed 's/<[^>]*>//g'); then
             echo "Current upstream version: $CURRENT_VERSION"
           else
             echo "::warning::Could not fetch upstream version -- continuing pipeline"
@@ -380,13 +380,20 @@ jobs:
         run: |
           echo "Fetching release history from iSpy..."
 
-          # Fetch the page
-          curl -s "${{ env.RELEASE_URL }}" -o /tmp/releases.html
+          # Fetch the page (follow redirects; iSpy dropped .aspx URLs with a 301 in Jun 2026)
+          curl -sfL "${{ env.RELEASE_URL }}" -o /tmp/releases.html
 
           # Parse the HTML table to extract versions and dates
           # Note: HTML uses <td valign="top"> so we match full td tag and strip with sed
           VERSION_LIMIT="${{ env.VERSION_CHECK_COUNT }}"
           grep -oP '<td[^>]*>\d+\.\d+\.\d+\.\d+</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -"$VERSION_LIMIT" > /tmp/versions.txt
+
+          # Hard-fail on empty parse: a silently empty version list disabled all
+          # builds for 3 weeks when the release URL started redirecting.
+          if [ ! -s /tmp/versions.txt ]; then
+            echo "::error::No versions parsed from $RELEASE_URL -- page moved or markup changed"
+            exit 1
+          fi
           grep -oP '<td[^>]*>\d{1,2}/\d{1,2}/\d{4}</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -"$VERSION_LIMIT" > /tmp/dates.txt
 
           # Parse beta status: HTML spans multiple lines, so convert to single-line first
