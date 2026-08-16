@@ -36,7 +36,60 @@ Build it:
 docker build -t local/ispyagentdvr-cuda:12.9 .
 ```
 
-## Compose example
+## Compose-only variant (no separate Dockerfile)
+
+Docker Compose v2.17+ can build the overlay itself via `dockerfile_inline` — everything lives in one `docker-compose.yml` and `docker compose up -d --build` does the rest. Note the fixed CUDA paths instead of `$(find ...)`: `$` needs `$$`-escaping inside `dockerfile_inline`, and the path is known anyway.
+
+```yaml
+services:
+  ispyagentdvr:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM nvidia/cuda:12.9.1-cudnn-runtime-ubuntu24.04 AS cuda
+        FROM ghcr.io/mekayelanik/ispyagentdvr:latest
+        COPY --from=cuda /usr/local/cuda /usr/local/cuda
+        COPY --from=cuda /usr/lib/x86_64-linux-gnu/libcudnn* /usr/lib/x86_64-linux-gnu/
+        ENV PATH="/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"
+        ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/cuda/targets/x86_64-linux/lib:/usr/lib/x86_64-linux-gnu"
+        RUN set -eux; \
+            echo "/usr/local/cuda/targets/x86_64-linux/lib" > /etc/ld.so.conf.d/cuda.conf; \
+            echo "/usr/local/cuda/lib64" >> /etc/ld.so.conf.d/cuda.conf; \
+            echo "/usr/lib/x86_64-linux-gnu" >> /etc/ld.so.conf.d/cuda.conf; \
+            /sbin/ldconfig; \
+            test -e /usr/lib/x86_64-linux-gnu/libcudnn.so.9; \
+            test -e /usr/local/cuda/targets/x86_64-linux/lib/libcudart.so.12; \
+            test -e /usr/local/cuda/targets/x86_64-linux/lib/libcublas.so.12
+    image: local/ispyagentdvr-cuda:12.9
+    container_name: agentdvr
+    environment:
+      - AGENTDVR_WEBUI_PORT=8090
+      - TZ=Etc/UTC
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ./config:/AgentDVR/Media/XML
+      - ./media:/AgentDVR/Media/WebServerRoot/Media
+      - ./models:/AgentDVR/Media/Models
+      - ./commands:/AgentDVR/Commands
+    ports:
+      - 8090:8090
+      - 3478:3478/udp
+      - 50000-50100:50000-50100/udp
+    runtime: nvidia
+    restart: unless-stopped
+```
+
+After pulling a new upstream tag, refresh with `docker compose build --pull && docker compose up -d`.
+
+## Compose example (prebuilt overlay image)
 
 ```yaml
 services:
