@@ -229,6 +229,7 @@ services:
 <a href="https://github.com/NVIDIA/nvidia-container-toolkit" rel="nofollow noopener">Nvidia-Container-Toolkit</a>
 <p>We added the necessary environment variable that will utilize all the features available on a GPU on the host. Once Nvidia container runtime is installed on your host you will need to re/create the docker container with the nvidia container runtime `--runtime=nvidia` and add an environment variable `-e NVIDIA_VISIBLE_DEVICES=all` (can also be set to a specific gpu's UUID, this can be discovered by running `nvidia-smi --query-gpu=gpu_name,gpu_uuid --format=csv` ). NVIDIA automatically mounts the GPU and drivers from your host into the AgentDVR docker container.
 </p>
+<p><strong>CUDA AI object detection:</strong> the image ships video HW acceleration only. For GPU object detection (CUDA + cuDNN) build a small overlay image — recipe: <a href="https://github.com/MekayelAnik/ispyagentdvr-docker/blob/main/CUDA-ACCELERATION.md" rel="nofollow noopener">CUDA-ACCELERATION.md</a></p>
 <h3>For AMD GPUs & iGPUs</h3>
 <p>The following have to be added in docker-compose file/docker-cli cm respectively</p>
 <p><strong>docker compose</strong></p>
