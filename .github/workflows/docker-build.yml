@@ -484,7 +484,17 @@ jobs:
           LATEST_IS_BETA="$HISTORY_LATEST_IS_BETA"
           echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
           echo "latest_is_beta=$LATEST_IS_BETA" >> $GITHUB_OUTPUT
-          echo "latest_beta_version=$(grep '|true$' /tmp/beta_status.txt | head -1 | cut -d'|' -f1)" >> $GITHUB_OUTPUT
+          # :beta tracks a beta only while it is actually ahead of stable. Once a beta is
+          # promoted, the newest "(Beta):" row still inside the scan window is historical --
+          # letting it stay the rolling target would drag :beta backwards if registry drift
+          # ever marked that old version for rebuild.
+          LATEST_BETA_VERSION=$(grep '|true$' /tmp/beta_status.txt | head -1 | cut -d'|' -f1)
+          if [ -n "$LATEST_BETA_VERSION" ] && [ -n "$LATEST_VERSION" ] && \
+             [ "$(printf '%s\n%s\n' "$LATEST_BETA_VERSION" "$LATEST_VERSION" | sort -V | tail -1)" = "$LATEST_VERSION" ]; then
+            echo "Newest beta $LATEST_BETA_VERSION is not ahead of stable $LATEST_VERSION -- no live beta channel"
+            LATEST_BETA_VERSION=""
+          fi
+          echo "latest_beta_version=$LATEST_BETA_VERSION" >> $GITHUB_OUTPUT
 
           # Create JSON object mapping version -> beta status
           BETA_VERSIONS=$(awk -F'|' '{printf "\"%s\":%s,", $1, $2}' /tmp/beta_status.txt | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')

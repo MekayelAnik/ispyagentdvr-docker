@@ -58,6 +58,10 @@ build_lists() {
   LATEST_VERSION=$(awk -F'|' '$3 != "true" { print $1; exit }' "$WORK/releases.txt")
   LATEST_IS_BETA="$HISTORY_LATEST_IS_BETA"
   LATEST_BETA_VERSION=$(grep '|true$' "$WORK/beta_status.txt" | head -1 | cut -d'|' -f1)
+  if [ -n "$LATEST_BETA_VERSION" ] && [ -n "$LATEST_VERSION" ] && \
+     [ "$(printf '%s\n%s\n' "$LATEST_BETA_VERSION" "$LATEST_VERSION" | sort -V | tail -1)" = "$LATEST_VERSION" ]; then
+    LATEST_BETA_VERSION=""
+  fi
   BETA_VERSIONS=$(awk -F'|' '{printf "\"%s\":%s,", $1, $2}' "$WORK/beta_status.txt" | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')
 
   # check-stable: newest non-beta row, held when its date is unknown
@@ -103,9 +107,10 @@ LIVE_PAGE_TOP=$(grep -oP '<td[^>]*>\d+\.\d+\.\d+\.\d+</td>' "$WORK/releases.html
 
 # --- Case 2: page lags a stable release ------------------------------------------------
 echo "== Case 2: release-history page missing the current stable release =="
-build_lists "9.9.9.0" "$LIVE_BETA" || fail "build_lists returned no-sources"
+LAG_STABLE="7.9.2.5"   # page still tops out at 7.9.2.0; beta channel is ahead of both
+build_lists "$LAG_STABLE" "$LIVE_BETA" || fail "build_lists returned no-sources"
 check_alignment
-[ "$LATEST_VERSION" = "9.9.9.0" ] || fail "spliced stable not picked as latest (got $LATEST_VERSION)"
+[ "$LATEST_VERSION" = "$LAG_STABLE" ] || fail "spliced stable not picked as latest (got $LATEST_VERSION)"
 [ "$LATEST_BETA_VERSION" = "$LIVE_BETA" ] || fail "beta lost when stable also spliced"
 [ "$(head -1 "$WORK/versions.txt")" = "$LIVE_BETA" ] || fail "beta not on top after both splices"
 [ "$STABLE_CANDIDATE" = "<held>" ] || fail ":stable promoted off a dateless entry ($STABLE_CANDIDATE)"
@@ -133,6 +138,33 @@ build_lists "$BAD" "$LIVE_BETA" || fail "build_lists hard-failed with a usable p
 check_alignment
 [ "$LATEST_VERSION" = "$LIVE_PAGE_TOP" ] || fail "unresolved stable channel disturbed :latest"
 echo "  unresolved channels splice nothing; latest=$LATEST_VERSION from the page"
+
+# --- Case 3c: the beta is promoted to stable -----------------------------------------
+echo "== Case 3c: beta promoted to stable =="
+# Page now lists the former beta WITHOUT a "(Beta):" marker, with an older beta still
+# inside the scan window. The promoted version must build as a plain stable tag, and the
+# stale historical beta must not become the :beta rolling target.
+cat > "$WORK/releases.html" <<'HTML'
+<tr><td valign="top">7.9.3.0</td><td valign="top">Stable notes</td><td valign="top">08/22/2026</td></tr>
+<tr><td valign="top">7.9.2.0</td><td valign="top">Update download UI</td><td valign="top">08/13/2026</td></tr>
+<tr><td valign="top">7.7.5.0</td><td valign="top"><p>(Beta):</p>Major UI refresh</td><td valign="top">07/24/2026</td></tr>
+HTML
+build_lists "7.9.3.0" "7.9.3.0" || fail "build_lists returned no-sources"
+check_alignment
+[ "$LATEST_VERSION" = "7.9.3.0" ] || fail "promoted version is not latest (got $LATEST_VERSION)"
+[ -z "$LATEST_BETA_VERSION" ] || fail "stale beta $LATEST_BETA_VERSION kept as the :beta target"
+echo "$BETA_VERSIONS" | jq -e '."7.9.3.0" == false' > /dev/null \
+  || fail "promoted version still flagged beta -- would publish 7.9.3.0-beta again"
+[ "$STABLE_CANDIDATE" = "7.9.3.0" ] || fail "stable candidate wrong: $STABLE_CANDIDATE"
+echo "  builds as plain 7.9.3.0, :beta target cleared, :stable candidate 7.9.3.0"
+
+# --- Case 3d: a newer beta appears after promotion -----------------------------------
+echo "== Case 3d: newer beta after promotion =="
+build_lists "7.9.3.0" "7.9.4.0" || fail "build_lists returned no-sources"
+check_alignment
+[ "$LATEST_BETA_VERSION" = "7.9.4.0" ] || fail "new beta not picked up (got $LATEST_BETA_VERSION)"
+[ "$LATEST_VERSION" = "7.9.3.0" ] || fail "new beta hijacked :latest"
+echo "  :beta target advances to 7.9.4.0, :latest stays 7.9.3.0"
 
 # --- Case 4: every source dead ---------------------------------------------------------
 echo "== Case 4: page unparseable and API unresolved =="
