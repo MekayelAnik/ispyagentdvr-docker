@@ -218,6 +218,7 @@ jobs:
   # Job 0: Quick state check — skip pipeline if nothing changed
   # ===========================================================================
   quick-check:
+    timeout-minutes: 15
     name: Quick state check
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
     outputs:
@@ -269,6 +270,7 @@ jobs:
   # Job 1: Check for new releases and validate requested versions
   # ===========================================================================
   check-releases:
+    timeout-minutes: 15
     name: Check Releases & Validate Versions
     needs: quick-check
     if: needs.quick-check.outputs.should_continue == 'true'
@@ -365,11 +367,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Drop runner-image baggage we don't need (Chrome apt repo flakes on
-          # mirror sync, e.g. "File has unexpected size" — see run 26055170793).
+          # jq and curl ship with the runner image; only skopeo needs apt, and it is
+          # merely a fallback for crane -- a stalled mirror here must not hold the
+          # concurrency group. A hung apt once blocked this job for hours.
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list
-          sudo apt-get update
-          sudo apt-get install -y curl jq skopeo
+          if ! sudo timeout 120 apt-get update -qq; then
+            echo "::warning::apt-get update failed -- continuing with crane only"
+            exit 0
+          fi
+          sudo timeout 180 apt-get install -y -qq skopeo \
+            || echo "::warning::skopeo unavailable -- crane only"
 
       - name: Setup build environment
         uses: ./.github/actions/setup-build-env
@@ -1146,6 +1153,7 @@ jobs:
   # Job 2: Build Docker images per platform (Split Build Strategy)
   # ===========================================================================
   build-platform:
+    timeout-minutes: 120
     name: Build ${{ matrix.version }} (${{ matrix.platform_slug }})
     needs: check-releases
     if: needs.check-releases.outputs.should_build == 'true' && needs.check-releases.outputs.build_matrix != ''
@@ -1384,6 +1392,7 @@ jobs:
   # Job 2b: Merge platform manifests into multi-arch images
   # ===========================================================================
   merge-manifest:
+    timeout-minutes: 120
     name: Merge Manifest ${{ matrix.version }}
     needs: [check-releases, build-platform]
     if: ${{ !cancelled() && needs.check-releases.result == 'success' && needs.check-releases.outputs.should_build == 'true' }}
@@ -1669,6 +1678,7 @@ jobs:
   # Job 3: Sync registries
   # ===========================================================================
   sync-registries:
+    timeout-minutes: 120
     name: Sync Registries
     needs: [check-releases, merge-manifest]
     if: |
@@ -1706,6 +1716,7 @@ jobs:
   # Job 4: Promote image to latest or stable
   # ===========================================================================
   promote-image:
+    timeout-minutes: 120
     name: Promote Image
     needs: [check-releases, merge-manifest]
     if: |
@@ -1901,6 +1912,7 @@ jobs:
   # Job 5: Mark stable (5-day rule)
   # ===========================================================================
   mark-stable:
+    timeout-minutes: 15
     name: Mark Stable
     needs: [check-releases, merge-manifest, sync-registries, promote-image]
     if: |
@@ -2105,6 +2117,7 @@ jobs:
   # Job 6: Update repository metadata (main branch)
   # ===========================================================================
   update-metadata:
+    timeout-minutes: 15
     name: Update Metadata
     needs: [check-releases, merge-manifest, sync-registries, mark-stable, promote-image]
     if: |
@@ -2206,6 +2219,7 @@ jobs:
   # Job 7: Update pipeline state (orphan branch for quick-check)
   # ===========================================================================
   update-state:
+    timeout-minutes: 15
     name: Update Pipeline State
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
     needs: [check-releases, merge-manifest, sync-registries]
@@ -2281,6 +2295,7 @@ jobs:
   # Job 9: Update README version after promote
   # ===========================================================================
   update-readme-version:
+    timeout-minutes: 15
     name: Update README version
     needs: [check-releases, promote-image]
     if: |
@@ -2334,6 +2349,7 @@ jobs:
   # Job 10: Sync README to Docker Hub description
   # ===========================================================================
   update-dockerhub-description:
+    timeout-minutes: 15
     name: Update Docker Hub description
     needs: [promote-image, update-readme-version]
     if: |
