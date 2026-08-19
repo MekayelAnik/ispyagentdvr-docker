@@ -192,6 +192,20 @@ env:
   # page moves or changes markup again, this still yields the current release so the
   # newest version never goes unbuilt (a page redirect cost 3 weeks of builds in Jun 2026).
   STABLE_API_URL: ${{ vars.STABLE_API_URL || 'https://www.ispyconnect.com/api/Agent/DownloadLocation5?platform=Linux64&useVersion=0&useBeta=False' }}
+  # repository_dispatch never populates github.event.inputs, so a payload like
+  # {"client_payload":{"force_build":"true"}} was silently ignored. Accept both.
+  FORCE_BUILD: ${{ github.event.inputs.force_build || github.event.client_payload.force_build || 'false' }}
+  # Rebuild the latest version once its published image ages past this, so Debian
+  # package updates in the base image actually reach the shipped image.
+  # Resolution order: client_payload > repo variable > default. Resolved in shell,
+  # since `x != null && x || y` collapses an explicit `false` back to `y`.
+  #
+  #   {"event_type":"Docker Build & Publish - Cron Scheduled",
+  #    "client_payload":{"package_refresh":false,"max_image_age_days":14}}
+  CP_PACKAGE_REFRESH: ${{ github.event.client_payload.package_refresh }}
+  CP_MAX_IMAGE_AGE_DAYS: ${{ github.event.client_payload.max_image_age_days }}
+  VAR_PACKAGE_REFRESH: ${{ vars.PACKAGE_REFRESH_ENABLED }}
+  VAR_MAX_IMAGE_AGE_DAYS: ${{ vars.MAX_IMAGE_AGE_DAYS }}
   DEFAULT_BASE_IMAGE: ${{ vars.DEFAULT_BASE_IMAGE || 'mekayelanik/ispyagentdvr-base-image:latest' }}
   # Base image update check: set to 'true' to enable automatic rebuilds when base image changes
   UPDATE_BASE_IMAGE_ENABLED: ${{ vars.UPDATE_BASE_IMAGE_ENABLED || 'false' }}
@@ -234,7 +248,7 @@ jobs:
         env:
           RELEASE_URL: ${{ env.RELEASE_URL }}
         run: |
-          FORCE="${{ github.event.inputs.force_build }}"
+          FORCE="${{ env.FORCE_BUILD }}"
           ACTION="${{ github.event.inputs.action || 'auto-check' }}"
 
           # Non-auto-check actions always continue
@@ -804,8 +818,8 @@ jobs:
         id: determine-versions
         run: |
           ACTION="${{ steps.set-action.outputs.action }}"
-          FORCE_BUILD="${{ github.event.inputs.force_build }}"
-          SKIP_EXISTING="${{ github.event.inputs.skip_existing }}"
+          FORCE_BUILD="${{ env.FORCE_BUILD }}"
+          SKIP_EXISTING="${{ github.event.inputs.skip_existing || github.event.client_payload.skip_existing }}"
           LATEST_VERSION="${{ steps.fetch-releases.outputs.latest_version }}"
           BETA_VERSIONS='${{ steps.fetch-releases.outputs.beta_versions }}'
 
@@ -929,6 +943,32 @@ jobs:
                     MISSING_VERSIONS="$LATEST_VERSION,$MISSING_VERSIONS"
                   fi
                 fi
+              fi
+
+              # Package refresh: this image layers on ispyagentdvr-base-image, so Debian
+              # updates only arrive on a rebuild. Latest version only -- older static
+              # version tags are historical and must keep their original contents.
+              PACKAGE_REFRESH="${CP_PACKAGE_REFRESH:-${VAR_PACKAGE_REFRESH:-true}}"
+              MAX_IMAGE_AGE_DAYS="${CP_MAX_IMAGE_AGE_DAYS:-${VAR_MAX_IMAGE_AGE_DAYS:-30}}"
+              if [ "$PACKAGE_REFRESH" == "true" ] && [ "$MAX_IMAGE_AGE_DAYS" != "0" ] \
+                 && ! echo ",$MISSING_VERSIONS," | grep -q ",$LATEST_VERSION,"; then
+                CREATED=$(crane config "${{ env.GHCR_REPO }}:${LATEST_VERSION}" 2>/dev/null | jq -r '.created // empty' || echo "")
+                if [ -n "$CREATED" ]; then
+                  CREATED_EPOCH=$(date -d "$CREATED" +%s 2>/dev/null || echo 0)
+                  if [ "$CREATED_EPOCH" -gt 0 ]; then
+                    AGE_DAYS=$(( ( $(date +%s) - CREATED_EPOCH ) / 86400 ))
+                    if [ "$AGE_DAYS" -ge "$MAX_IMAGE_AGE_DAYS" ]; then
+                      echo "Latest version $LATEST_VERSION is ${AGE_DAYS}d old (>= ${MAX_IMAGE_AGE_DAYS}d) -- rebuilding for package updates"
+                      MISSING_VERSIONS="${LATEST_VERSION}${MISSING_VERSIONS:+,$MISSING_VERSIONS}"
+                    else
+                      echo "Latest version $LATEST_VERSION is ${AGE_DAYS}d old (< ${MAX_IMAGE_AGE_DAYS}d) -- no package-refresh rebuild"
+                    fi
+                  fi
+                else
+                  echo "::warning::Could not read the creation date of ${LATEST_VERSION} -- skipping the image age check"
+                fi
+              elif [ "$PACKAGE_REFRESH" != "true" ] || [ "$MAX_IMAGE_AGE_DAYS" == "0" ]; then
+                echo "Package-refresh rebuild disabled (package_refresh=$PACKAGE_REFRESH, max_image_age_days=$MAX_IMAGE_AGE_DAYS)"
               fi
 
               # --- Digest check: :latest tag should match latest version tag ---
