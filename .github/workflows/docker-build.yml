@@ -184,6 +184,14 @@ env:
   DEFAULT_PLATFORMS: ${{ vars.DEFAULT_PLATFORMS || 'linux/amd64,linux/arm64,linux/arm/v7' }}
   BINARY_BASE_URL: ${{ vars.BINARY_BASE_URL || 'https://files.ispyconnect.com/downloads' }}
   RELEASE_URL: ${{ vars.RELEASE_URL || 'https://www.ispyconnect.com/producthistory?productid=27' }}
+  # Beta channel lives outside the release-history page: iSpy stopped tagging betas with
+  # "(Beta):" there after 7.7.5.0 (24 Jul 2026) and now only exposes them via this API
+  # (same endpoint the official linux_setup2.sh uses for USE_BETA=true).
+  BETA_API_URL: ${{ vars.BETA_API_URL || 'https://www.ispyconnect.com/api/Agent/DownloadLocation5?platform=Linux64&useVersion=0&useBeta=True' }}
+  # Same endpoint on the stable channel. Used as a safety net: if the release-history
+  # page moves or changes markup again, this still yields the current release so the
+  # newest version never goes unbuilt (a page redirect cost 3 weeks of builds in Jun 2026).
+  STABLE_API_URL: ${{ vars.STABLE_API_URL || 'https://www.ispyconnect.com/api/Agent/DownloadLocation5?platform=Linux64&useVersion=0&useBeta=False' }}
   DEFAULT_BASE_IMAGE: ${{ vars.DEFAULT_BASE_IMAGE || 'mekayelanik/ispyagentdvr-base-image:latest' }}
   # Base image update check: set to 'true' to enable automatic rebuilds when base image changes
   UPDATE_BASE_IMAGE_ENABLED: ${{ vars.UPDATE_BASE_IMAGE_ENABLED || 'false' }}
@@ -270,6 +278,7 @@ jobs:
       versions_json: ${{ steps.filter-excluded.outputs.versions_json || steps.determine-versions.outputs.versions_json }}
       latest_version: ${{ steps.fetch-releases.outputs.latest_version }}
       latest_is_beta: ${{ steps.fetch-releases.outputs.latest_is_beta }}
+      latest_beta_version: ${{ steps.fetch-releases.outputs.latest_beta_version }}
       beta_versions: ${{ steps.fetch-releases.outputs.beta_versions }}
       available_versions: ${{ steps.fetch-releases.outputs.available_versions }}
       should_build: ${{ steps.filter-excluded.outputs.should_build || steps.determine-versions.outputs.should_build }}
@@ -388,11 +397,30 @@ jobs:
           VERSION_LIMIT="${{ env.VERSION_CHECK_COUNT }}"
           grep -oP '<td[^>]*>\d+\.\d+\.\d+\.\d+</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -"$VERSION_LIMIT" > /tmp/versions.txt
 
-          # Hard-fail on empty parse: a silently empty version list disabled all
-          # builds for 3 weeks when the release URL started redirecting.
+          # Resolve both download channels. These are the URLs iSpy's own installer uses,
+          # so they answer even when the release-history page does not.
+          # Prints e.g. https://files.ispyconnect.com/downloads/Agent_Linux64_7_9_3_0.zip
+          # Returns empty on any curl failure (4xx/5xx/network) so callers skip the splice.
+          # Quotes are stripped in-shell rather than by a pipe, so curl's exit status is
+          # the command's exit status and the failure branch actually fires.
+          channel_version() {
+            local url=$1 dl=""
+            dl=$(curl -sfL "$url") || return 0
+            echo "${dl//\"/}" | sed -nE 's#.*_([0-9]+)_([0-9]+)_([0-9]+)_([0-9]+)\.zip$#\1.\2.\3.\4#p'
+          }
+          STABLE_CHANNEL_VERSION=$(channel_version "${{ env.STABLE_API_URL }}")
+          BETA_CHANNEL_VERSION=$(channel_version "${{ env.BETA_API_URL }}")
+          echo "Download API -- stable: ${STABLE_CHANNEL_VERSION:-<unresolved>}, beta: ${BETA_CHANNEL_VERSION:-<unresolved>}"
+
+          # Hard-fail only when every source is dead. A silently empty version list
+          # disabled all builds for 3 weeks when the release URL started redirecting;
+          # now a broken page degrades to API-only instead of stopping the pipeline.
           if [ ! -s /tmp/versions.txt ]; then
-            echo "::error::No versions parsed from $RELEASE_URL -- page moved or markup changed"
-            exit 1
+            if [ -z "$STABLE_CHANNEL_VERSION" ] && [ -z "$BETA_CHANNEL_VERSION" ]; then
+              echo "::error::No versions parsed from $RELEASE_URL and the download API returned nothing"
+              exit 1
+            fi
+            echo "::warning::No versions parsed from $RELEASE_URL -- page moved or markup changed. Falling back to the download API alone; backfill scanning and :stable promotion are degraded until the page parses again."
           fi
           grep -oP '<td[^>]*>\d{1,2}/\d{1,2}/\d{4}</td>' /tmp/releases.html | sed 's/<[^>]*>//g' | head -"$VERSION_LIMIT" > /tmp/dates.txt
 
@@ -411,15 +439,45 @@ jobs:
             fi
           done < /tmp/versions.txt
 
+          # Preserve the release-history view of "newest" before splicing anything in.
+          HISTORY_LATEST_IS_BETA=$(head -1 /tmp/beta_status.txt | cut -d'|' -f2)
+
+          # --- Splice in versions the release-history page does not list ---
+          # iSpy stopped marking betas with "(Beta):" on that page after 7.7.5.0 (24 Jul 2026),
+          # and the page can lag or break for stable releases too. Anything the download API
+          # reports but the page omits is prepended as the newest entry so it still gets built.
+          # Date is "-" (unknown): these entries never feed the :stable promotion clock.
+          splice_version() {
+            local version=$1 is_beta=$2 label=$3
+            if [ -z "$version" ]; then
+              echo "::warning::Could not resolve a $label version from the download API"
+              return 0
+            fi
+            if grep -qx "$version" /tmp/versions.txt; then
+              echo "$label channel version $version already in release history -- no splice"
+              return 0
+            fi
+            echo "$label channel exposes $version (absent from release history) -- splicing in"
+            # Prepend via a temp file: "sed -i 1i" is a no-op on an empty file, which is
+            # exactly the case here when the release-history page failed to parse.
+            { echo "$version"; cat /tmp/versions.txt; } > /tmp/versions.new && mv /tmp/versions.new /tmp/versions.txt
+            { echo '-'; cat /tmp/dates.txt; } > /tmp/dates.new && mv /tmp/dates.new /tmp/dates.txt
+            { echo "${version}|${is_beta}"; cat /tmp/beta_status.txt; } > /tmp/beta_status.new && mv /tmp/beta_status.new /tmp/beta_status.txt
+          }
+          # Stable first so that, if both splice, the beta still ends up on top.
+          splice_version "$STABLE_CHANNEL_VERSION" "false" "Stable"
+          splice_version "$BETA_CHANNEL_VERSION" "true" "Beta"
+
           # Create combined output (version|date|is_beta)
           paste -d'|' /tmp/versions.txt /tmp/dates.txt > /tmp/releases_temp.txt
           paste -d'|' /tmp/releases_temp.txt <(cut -d'|' -f2 /tmp/beta_status.txt) > /tmp/releases.txt
 
           # Get latest version and its beta status
-          LATEST_VERSION=$(head -1 /tmp/versions.txt)
-          LATEST_IS_BETA=$(head -1 /tmp/beta_status.txt | cut -d'|' -f2)
+          LATEST_VERSION=$(awk -F'|' '$3 != "true" { print $1; exit }' /tmp/releases.txt)
+          LATEST_IS_BETA="$HISTORY_LATEST_IS_BETA"
           echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
           echo "latest_is_beta=$LATEST_IS_BETA" >> $GITHUB_OUTPUT
+          echo "latest_beta_version=$(grep '|true$' /tmp/beta_status.txt | head -1 | cut -d'|' -f1)" >> $GITHUB_OUTPUT
 
           # Create JSON object mapping version -> beta status
           BETA_VERSIONS=$(awk -F'|' '{printf "\"%s\":%s,", $1, $2}' /tmp/beta_status.txt | sed 's/,$//' | sed 's/^/{/' | sed 's/$/}/')
@@ -661,6 +719,16 @@ jobs:
               break
             fi
           done < /tmp/releases.txt
+
+          # A candidate spliced in from the download API has no release date yet. Hold the
+          # promotion rather than aging an older build into :stable ahead of schedule --
+          # the real date arrives once the release-history page lists it.
+          if [ -n "$CANDIDATE_VERSION" ] && ! echo "$CANDIDATE_DATE" | grep -qE '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$'; then
+            echo "::warning::$CANDIDATE_VERSION has no release date yet (not on the release-history page) -- holding :stable promotion"
+            echo "should_mark_stable=false" >> $GITHUB_OUTPUT
+            echo "stable_version=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
           if [ -z "$CANDIDATE_VERSION" ] || [ -z "$CANDIDATE_DATE" ]; then
             echo "::warning::Could not determine a non-beta stable candidate"
@@ -1398,15 +1466,18 @@ jobs:
           # Generate date tag in Bangladesh time (UTC+6) - format: DDMMYYYY
           DATE_TAG=$(TZ=Asia/Dhaka date +"%d%m%Y")
 
-          # Generate tags based on beta status
+          # Generate tags based on beta status. The rolling tag target differs per track:
+          # :beta follows the newest beta, :latest follows the newest stable release.
           if [ "$IS_BETA" == "true" ]; then
             VERSION_TAG="${VERSION}-beta"
             VERSION_DATE_TAG="${VERSION}-beta-${DATE_TAG}"
             ROLLING_TAG="beta"
+            ROLLING_TARGET="${{ needs.check-releases.outputs.latest_beta_version }}"
           else
             VERSION_TAG="${VERSION}"
             VERSION_DATE_TAG="${VERSION}-${DATE_TAG}"
             ROLLING_TAG="latest"
+            ROLLING_TARGET="$LATEST_VERSION"
           fi
 
           # Build tag lists for imagetools
@@ -1416,7 +1487,7 @@ jobs:
           if [ "$PUSH_DOCKERHUB" != "false" ]; then
             DOCKERHUB_TAGS="-t ${{ env.DOCKERHUB_REPO }}:${VERSION_TAG}"
             DOCKERHUB_TAGS="$DOCKERHUB_TAGS -t ${{ env.DOCKERHUB_REPO }}:${VERSION_DATE_TAG}"
-            if [ "$VERSION" == "$LATEST_VERSION" ] && [ "$TAG_AS_LATEST" != "false" ]; then
+            if [ "$VERSION" == "$ROLLING_TARGET" ] && [ "$TAG_AS_LATEST" != "false" ]; then
               DOCKERHUB_TAGS="$DOCKERHUB_TAGS -t ${{ env.DOCKERHUB_REPO }}:${ROLLING_TAG}"
             fi
           fi
@@ -1424,7 +1495,7 @@ jobs:
           if [ "$PUSH_GHCR" != "false" ]; then
             GHCR_TAGS="-t ${{ env.GHCR_REPO }}:${VERSION_TAG}"
             GHCR_TAGS="$GHCR_TAGS -t ${{ env.GHCR_REPO }}:${VERSION_DATE_TAG}"
-            if [ "$VERSION" == "$LATEST_VERSION" ] && [ "$TAG_AS_LATEST" != "false" ]; then
+            if [ "$VERSION" == "$ROLLING_TARGET" ] && [ "$TAG_AS_LATEST" != "false" ]; then
               GHCR_TAGS="$GHCR_TAGS -t ${{ env.GHCR_REPO }}:${ROLLING_TAG}"
             fi
           fi
