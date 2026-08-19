@@ -2307,10 +2307,14 @@ jobs:
   update-readme-version:
     timeout-minutes: 15
     name: Update README version
-    needs: [check-releases, promote-image]
+    # Also runs after a beta-only publish: promote-image handles the :latest rolling
+    # tag and is skipped for betas, so gating solely on it left the beta row in the
+    # tag table frozen at whatever version was current when it was last hand-edited.
+    needs: [check-releases, merge-manifest, promote-image]
     if: |
-      needs.promote-image.result == 'success' &&
-      needs.check-releases.outputs.latest_version != ''
+      always() &&
+      needs.check-releases.outputs.latest_version != '' &&
+      (needs.promote-image.result == 'success' || needs.merge-manifest.result == 'success')
     runs-on: ${{ vars.ACTION_RUNNER_VERSION || 'ubuntu-latest' }}
     permissions:
       contents: write
@@ -2326,11 +2330,20 @@ jobs:
         run: |
           set -euo pipefail
           LATEST="${{ needs.check-releases.outputs.latest_version }}"
-          echo "Updating README to version $LATEST"
+          BETA="${{ needs.check-releases.outputs.latest_beta_version }}"
+          echo "Updating README -- stable: $LATEST, beta: ${BETA:-<none>}"
 
-          # Update the specific version tag row in the Available Tags table
+          # Stable row. The version cell is matched with a closing </td> right after the
+          # digits so it cannot also swallow the "<version>-beta" cell below it.
           sed -i -E "s|<td align=\"center\">[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+</td>|<td align=\"center\">${LATEST}</td>|" README.md
           sed -i -E "s|\"iSpy Agent DVR\" Static version [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ image|\"iSpy Agent DVR\" Static version ${LATEST} image|" README.md
+
+          # Beta row. Only touched when a beta is actually ahead of stable; when the
+          # beta channel has no live version the row is left as the last published beta.
+          if [ -n "$BETA" ]; then
+            sed -i -E "s|<td align=\"center\">[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+-beta</td>|<td align=\"center\">${BETA}-beta</td>|" README.md
+            sed -i -E "s|\"iSpy Agent DVR\" [0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ beta release for testing|\"iSpy Agent DVR\" ${BETA} beta release for testing|" README.md
+          fi
 
           if git diff --quiet README.md; then
             echo "README already up to date"
@@ -2340,7 +2353,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add README.md
-          git commit -m "docs: update README version to ${LATEST}"
+          git commit -m "docs: update README versions (stable ${LATEST}${BETA:+, beta ${BETA}})"
 
           for attempt in 1 2 3; do
             if git pull --rebase origin main && git push origin main; then

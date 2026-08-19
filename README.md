@@ -97,10 +97,10 @@
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
-      <td align="center">7.2.4.0-beta</td>
+      <td align="center">7.9.3.0-beta</td>
       <td align="center">⚠️</td>
-      <td>"iSpy Agent DVR" 7.2.4.0 beta release for testing</td>
-      <td>⚠️ THOROUGH TESTING REQUIRED. Backup config before trying!!! Discouraged to use on mission-critical envirenments!!! ⚠️</td>
+      <td>"iSpy Agent DVR" 7.9.3.0 beta release for testing</td>
+      <td>⚠️ THOROUGH TESTING REQUIRED. Backup config before trying!!! Discouraged to use on mission-critical environments!!! ⚠️</td>
     </tr>
   </tbody>
 </table>
