@@ -3,13 +3,16 @@ set -euo pipefail
 
 # Configuration
 AGENTDVR_DIR="/AgentDVR/"
+# NOTE: setup-ffmpeg-linux.sh must NOT be removed: the app invokes it at
+# runtime when the user opts in to the GPL FFmpeg build (the bundled LGPL
+# build ships inside the AgentDVR zip; the GPL variant is downloaded on
+# demand to the persisted config volume).
 FILES_TO_REMOVE=(
     "setup.sh"
     "agent-register.sh"
     "agent-reset.sh"
     "agent-reset-account.sh"
     "agent-reset-local-login.sh"
-    "setup-ffmpeg-linux.sh"
     "setup-ffmpeg-osx.sh"
     "agent-uninstall-service.sh"
     "agent-update.sh"
