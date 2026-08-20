@@ -192,9 +192,13 @@ env:
   # page moves or changes markup again, this still yields the current release so the
   # newest version never goes unbuilt (a page redirect cost 3 weeks of builds in Jun 2026).
   STABLE_API_URL: ${{ vars.STABLE_API_URL || 'https://www.ispyconnect.com/api/Agent/DownloadLocation5?platform=Linux64&useVersion=0&useBeta=False' }}
-  # repository_dispatch never populates github.event.inputs, so a payload like
-  # {"client_payload":{"force_build":"true"}} was silently ignored. Accept both.
-  FORCE_BUILD: ${{ github.event.inputs.force_build || github.event.client_payload.force_build || 'false' }}
+  # NOTE: deliberately does NOT read github.event.client_payload.force_build.
+  # The scheduled cron payload has carried force_build:"true" for months while
+  # github.event.inputs was empty for repository_dispatch, so it never took effect.
+  # Honouring it turned every 30-minute poll into a full multi-arch rebuild.
+  # Use the package_refresh knobs below for scheduled rebuilds, or workflow_dispatch
+  # for a genuine one-off force.
+  FORCE_BUILD: ${{ github.event.inputs.force_build || 'false' }}
   # Rebuild the latest version once its published image ages past this, so Debian
   # package updates in the base image actually reach the shipped image.
   # Resolution order: client_payload > repo variable > default. Resolved in shell,
