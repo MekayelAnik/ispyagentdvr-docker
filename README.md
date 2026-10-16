@@ -97,9 +97,9 @@
       <td>Tested "WORKING"</td>
     </tr>
     <tr>
-      <td align="center">8.0.9.0-beta</td>
+      <td align="center">8.1.2.0-beta</td>
       <td align="center">⚠️</td>
-      <td>"iSpy Agent DVR" 8.0.9.0 beta release for testing</td>
+      <td>"iSpy Agent DVR" 8.1.2.0 beta release for testing</td>
       <td>⚠️ THOROUGH TESTING REQUIRED. Backup config before trying!!! Discouraged to use on mission-critical environments!!! ⚠️</td>
     </tr>
   </tbody>
